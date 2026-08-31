@@ -47,7 +47,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
   {
     name: 'inspect_figure_workspace',
     title: 'Inspect current figure workspace state',
-    description: 'Returns the current session state: scientific question, declared figure intent, revision number, the currently applied figure spec (if any), the most recent validation result, and a count of provenance events. Read-only. Does NOT return dataset field metadata — call inspect_dataset_fields separately for that. Call this first in a session, or after apply_figure_revision, to know what is currently on screen before proposing a change.',
+    description: 'Returns the current session state: which panel is agent-editable (agentEditablePanelId), scientific question, declared figure intent, revision number, the currently applied figure spec (if any), the most recent validation result, and a count of provenance events. Read-only. Does NOT return dataset field metadata — call inspect_dataset_fields separately for that. Call this first in a session, or after apply_figure_revision, to know what is currently on screen and which panel target to use before proposing a change.',
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: false
@@ -60,7 +60,11 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     outputSchema: {
       type: 'object',
       properties: {
-        datasetId: { type: 'string', const: 'palmer-penguins' },
+        agentEditablePanelId: {
+          type: 'string',
+          description: 'The panelId of the panel currently flagged isAgentEditable: true. Use this as targetPanelId in propose_figure_revision and apply_figure_revision.'
+        },
+        datasetId: { type: 'string' },
         scientificQuestion: { type: 'string' },
         figureIntent: {
           type: 'string',
@@ -69,7 +73,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         revision: { type: 'integer', minimum: 0 },
         currentSpec: {
           type: ['object', 'null'],
-          description: 'The FigureSpec currently applied, or null if no revision has been applied yet this session.'
+          description: 'The FigureSpec currently applied to the agent-editable panel, or null if no revision has been applied yet this session.'
         },
         lastValidation: {
           type: ['object', 'null'],
@@ -93,39 +97,14 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         },
         provenanceEventCount: { type: 'integer', minimum: 0 }
       },
-      required: ['datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
+      required: ['agentEditablePanelId', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
       additionalProperties: false
-    }
-  },
-  {
-    name: 'inspect_figure_state',
-    title: 'Inspect current figure state',
-    description: 'Returns the current active datasetId, currentRevision, canonical FigureSpec, active staging preview (if any), and recent provenance events. Read-only.',
-    annotations: {
-      readOnlyHint: true,
-      untrustedContentHint: false
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        datasetId: { type: 'string' },
-        currentRevision: { type: 'integer', minimum: 0 },
-        spec: { type: 'object' },
-        activePreviewId: { type: ['string', 'null'] },
-        hasPendingApproval: { type: 'boolean' }
-      },
-      required: ['datasetId', 'currentRevision', 'spec', 'activePreviewId', 'hasPendingApproval']
     }
   },
   {
     name: 'propose_figure_revision',
     title: 'Propose a figure revision',
-    description: 'Prepares a candidate figure specification from stated intent and field mappings, and runs deterministic scientific validation against it. Does not mutate canonical state; returns previewId for human review.',
+    description: 'Prepares a candidate figure specification from stated intent and field mappings, and runs deterministic scientific validation against it. Does not mutate canonical state; returns previewId for confirmation.',
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -134,6 +113,10 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        targetPanelId: {
+          type: 'string',
+          description: 'Must equal the panelId of the panel currently flagged isAgentEditable: true. Calls targeting any other panelId are rejected — the agent may only ever operate the one designated agent-editable panel.'
+        },
         figureIntent: {
           type: 'string',
           enum: ['comparison', 'distribution', 'relationship', 'trend'],
@@ -197,7 +180,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
           description: 'Method for encoding data uncertainty or null/none.'
         }
       },
-      required: ['figureIntent', 'mark', 'encoding', 'showsRawObservations', 'uncertaintyEncoding']
+      required: ['targetPanelId', 'figureIntent', 'mark', 'encoding', 'showsRawObservations', 'uncertaintyEncoding']
     },
     outputSchema: {
       type: 'object',
@@ -220,7 +203,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
   {
     name: 'apply_figure_revision',
     title: 'Apply an approved figure revision',
-    description: 'Commits a previously proposed figure revision after the human has reviewed and approved it in the UI. Enforces optimistic concurrency and UI human approval check.',
+    description: 'Commits a previously proposed figure revision after native user confirmation. Enforces targetPanelId validation and optimistic concurrency checks.',
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -230,11 +213,14 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        targetPanelId: {
+          type: 'string',
+          description: 'Must equal the panelId of the panel currently flagged isAgentEditable: true. Calls targeting any other panelId are rejected — the agent may only ever operate the one designated agent-editable panel.'
+        },
         previewId: { type: 'string', description: 'Must match a previewId returned by propose_figure_revision.' },
-        basedOnRevision: { type: 'integer', minimum: 0, description: 'Must equal the project current revision.' },
-        humanApprovalConfirmed: { type: 'boolean', description: 'Confirmation that human approved in UI.' }
+        basedOnRevision: { type: 'integer', minimum: 0, description: 'Must equal the project current revision.' }
       },
-      required: ['previewId', 'basedOnRevision', 'humanApprovalConfirmed']
+      required: ['targetPanelId', 'previewId', 'basedOnRevision']
     },
     outputSchema: {
       type: 'object',
@@ -246,126 +232,6 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         message: { type: 'string' }
       },
       required: ['status', 'newRevision', 'appliedSpec', 'provenanceEventId', 'message']
-    }
-  },
-  {
-    name: 'validate_figure_revision',
-    title: 'Speculatively validate figure revision',
-    description: 'Dry-run evaluation of scientific validation rules without creating a previewId or mutating staging state.',
-    annotations: {
-      readOnlyHint: true,
-      untrustedContentHint: false
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        figureIntent: { type: 'string' },
-        mark: { type: 'string' },
-        encoding: { type: 'object' },
-        showsRawObservations: { type: 'boolean' },
-        uncertaintyEncoding: { type: ['string', 'null'] }
-      },
-      required: ['figureIntent', 'mark', 'encoding', 'showsRawObservations']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        valid: { type: 'boolean' },
-        issues: { type: 'array' }
-      },
-      required: ['valid', 'issues']
-    }
-  },
-  {
-    name: 'perform_statistical_test',
-    title: 'Perform scientific statistical test',
-    description: 'Runs Welch\'s two-sample t-test or Pearson correlation analysis on active dataset fields. Returns p-value, degrees of freedom, significance stars, and recommended figure annotation brackets.',
-    annotations: {
-      readOnlyHint: true,
-      untrustedContentHint: false
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        testType: { type: 'string', enum: ['t-test', 'correlation'] },
-        valueField: { type: 'string', description: 'Quantitative outcome variable' },
-        groupField: { type: 'string', description: 'Categorical group variable (for t-test) or second quantitative field (for correlation)' },
-        group1Val: { type: 'string', description: 'Optional first group name' },
-        group2Val: { type: 'string', description: 'Optional second group name' }
-      },
-      required: ['testType', 'valueField', 'groupField']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        testName: { type: 'string' },
-        statisticName: { type: 'string' },
-        statisticValue: { type: 'number' },
-        degreesOfFreedom: { type: 'number' },
-        pValue: { type: 'number' },
-        significanceStars: { type: 'string' },
-        groupStats: { type: 'array' },
-        summary: { type: 'string' },
-        recommendedAnnotation: { type: 'object' }
-      },
-      required: ['testName', 'statisticValue', 'pValue', 'significanceStars', 'summary']
-    }
-  },
-  {
-    name: 'set_publication_style',
-    title: 'Set publication journal theme style',
-    description: 'Proposes applying a major scientific journal theme preset (Nature, Science, Cell, IEEE, GraphPad Prism) with compliant typography, margins, color palettes, and axis rules.',
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      untrustedContentHint: false
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        themePreset: { type: 'string', enum: ['nature', 'science', 'cell', 'ieee', 'prism', 'dark', 'light'] },
-        customTitle: { type: 'string' },
-        customSubtitle: { type: 'string' }
-      },
-      required: ['themePreset']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        previewId: { type: 'string' },
-        basedOnRevision: { type: 'integer' },
-        appliedPreset: { type: 'string' },
-        themeSummary: { type: 'string' }
-      },
-      required: ['previewId', 'basedOnRevision', 'appliedPreset', 'themeSummary']
-    }
-  },
-  {
-    name: 'export_publication_figure',
-    title: 'Export publication figure bundle',
-    description: 'Generates a publication-ready figure bundle including compiled Vega-Lite spec, formatted scientific caption with statistics/n-counts, and journal compliance score.',
-    annotations: {
-      readOnlyHint: true,
-      untrustedContentHint: false
-    },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        format: { type: 'string', enum: ['vegalite', 'caption', 'full-bundle'] }
-      },
-      required: ['format']
-    },
-    outputSchema: {
-      type: 'object',
-      properties: {
-        datasetTitle: { type: 'string' },
-        revision: { type: 'integer' },
-        spec: { type: 'object' },
-        caption: { type: 'string' },
-        complianceScore: { type: 'number' },
-        guidelineChecks: { type: 'array' }
-      },
-      required: ['datasetTitle', 'revision', 'spec', 'caption', 'complianceScore']
     }
   }
 ];

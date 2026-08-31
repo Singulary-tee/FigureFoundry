@@ -30,6 +30,26 @@ FigureFoundry bridges the gap between AI generation and scientific rigor. Instea
    - Inspect AX telemetry (payload byte size, token estimate, latency).
    - Simulate complex agent workflows or manual schema invocation.
 
+## Try It
+
+Open the live URL in a WebMCP-capable browser (Chrome 149+ with the flag enabled, or the ChatGPT desktop app's built-in browser).
+
+Ask the agent: **"Look at the comparison panel's dataset, then propose a figure that compares [field A] and [field B] grouped by [category field], showing individual data points rather than just an average."**
+
+Expected tools, in order:
+1. `inspect_figure_workspace` — agent learns which panel is agent-editable and its current state.
+2. `inspect_dataset_fields` — agent learns the real column names/types (do not hardcode field names into the prompt above; the agent must discover them).
+3. `propose_figure_revision` — agent submits a candidate spec; a validation report and `previewId` come back.
+4. `apply_figure_revision` — agent calls this with the `previewId`; the browser pauses and shows a native confirmation prompt describing the proposed change.
+
+Expected visible result: after you confirm, the agent-editable panel's chart re-renders in place on the canvas with a brief highlight on that panel's frame. No other panel changes. No custom "Agent did X" banner appears anywhere — confirmation happens in the browser's own native prompt, not in page UI.
+
+Expected confirmation point: the native browser prompt triggered by `requestUserInteraction()` inside `apply_figure_revision`'s execution — not a modal built by this app.
+
+Fallback behavior: if WebMCP is unavailable, every control used above is also reachable manually via the Design tab on the same panel — the app is fully functional without an agent.
+
+Reset: Refresh the page; WebMCP session state is in-memory only.
+
 ---
 
 ## Documentation Directory

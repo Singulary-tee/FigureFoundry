@@ -1,38 +1,75 @@
-# FigureFoundry — Agent Guidelines & Invariants
+# AGENTS.md — FigureFoundry
 
-## 1. System Identity & Mission
-FigureFoundry is a local-first, browser-hosted scientific figure workbench powered by **WebMCP** (Web Model Context Protocol) and **Vega-Lite**. Its goal is to eliminate misleading scientific figures by giving AI agents a compact, deterministic semantic tool surface while keeping the human researcher in full authorial control.
+This file is read by both the coding agent (Gemini/AI Studio) and, at
+runtime, informs how the WebMCP-calling agent should reason about this app.
+If anything here conflicts with a comment inside a specific source file,
+this file wins — it is the canonical, most-recently-corrected source.
 
-## 2. Non-Negotiable Invariants
+## What this app is
 
-### Invariant A: Human-Agent Command Parity
-The Human UI and the WebMCP tool executors are equal consumers of the domain layer (`src/packages/domain`).
-- Dispatches must go through canonical domain action creators (`proposeFigureRevision`, `applyFigureRevision`, `rejectFigurePreview`).
-- Never introduce agent-only shadow reducers, direct DOM manipulation, or bypass state mechanisms.
+A multi-panel scientific figure canvas. A human composes and manually edits
+a layout of panels (forest plot, funnel plot, grouped bar, text caption, and
+one data-comparison chart). Exactly ONE panel — the one flagged
+`isAgentEditable: true` — can be modified by an AI agent through four WebMCP
+tools. Every other panel, and every piece of chrome around the canvas
+(Layers, Design/Data/Export tabs, Theme system, Select/Pan/Shape/Text/Line/
+Arrow/Image/Table/Arrange tools), is human-manual only. No tool touches them.
 
-### Invariant B: Two-Phase Commit with Human Authorization
-- Phase 1 (`propose_figure_revision`): Computes candidate Vega-Lite specification, runs deterministic scientific validation, and generates a transient `previewId`.
-- Human Gate: The researcher inspects the proposed figure diff and validation warnings directly in the UI.
-- Phase 2 (`apply_figure_revision`): Commits the revision only if `previewId` exists, `basedOnRevision` matches the current state, and human UI approval is confirmed.
+## Five non-negotiable invariants
 
-### Invariant C: Optimistic Concurrency & Stale State Rejection
-- Every mutation must specify `basedOnRevision`.
-- If `basedOnRevision !== currentRevision`, the commit fails with status `rejected_stale`.
-- Previews are single-use. Once applied or discarded, they are invalidated immediately.
+1. **No hardcoded data, anywhere.** Every panel's underlying data (study
+   rows, funnel points, bar series, chart dataset) is a real, editable table
+   the human can modify in the Data tab — seeded with demo values, never
+   baked in as an immutable constant. This applies even to panels the agent
+   cannot touch.
+2. **No IndexedDB, no backend, no required API key.** The WebMCP-relevant
+   state (`FigureProject`: revision, provenance, currentSpec) lives in
+   memory only, for the session, per `domain-types.ts`. Reproducibility is
+   satisfied by explicit export/import of a JSON bundle, not persistence.
+   The manual-UI layer (panel positions, layers, theme) uses `localStorage`
+   only — a different, separate persistence story, never merged with the
+   WebMCP state.
+3. **Confirmation is native, not page-authored.** `apply_figure_revision`'s
+   gate is the browser's `requestUserInteraction()`, called inside its
+   `execute()` function. Do not build a custom approval modal, an
+   "ApprovalGate" state store, or any UI element whose sole job is to
+   confirm this one tool call. If you find one in the existing codebase
+   (e.g., a component resembling `TwoPhaseApprovalBanner.tsx`), it is a
+   known defect — remove the custom gate logic and replace it with the
+   native call; the component may keep rendering the *result* of a
+   confirmed/declined action, it just cannot BE the confirmation.
+4. **Exactly one tool surface, four tools, one target.** `inspect_dataset_fields`,
+   `inspect_figure_workspace`, `propose_figure_revision`, `apply_figure_revision`.
+   The latter two require `targetPanelId`, which must match the current
+   `isAgentEditable` panel — reject anything else. Do not add a fifth tool,
+   do not widen any tool's scope, do not let any tool touch a second panel.
+5. **No decorative agent-chrome.** No "Agent is thinking..." banners, no
+   "🤖 Connected" badges, no activity-log sidebar duplicating what the
+   WebMCP host already shows. The one exception: the Design tab, when the
+   agent-editable panel is selected, may show a plain-text state label
+   (e.g., "Awaiting agent proposal") because it explains why that panel's
+   manual controls are temporarily read-only — that's functional
+   disclosure, not decoration. No other panel gets an equivalent badge.
 
-### Invariant D: Deterministic Validation over Model Self-Policing
-- Never rely solely on LLM prompts for statistical correctness.
-- Hard deterministic rules in `src/packages/validation` check for:
-  1. Distribution intent without raw individual data points (blocking).
-  2. Non-positive values on logarithmic axes (blocking).
-  3. High-cardinality nominal variables mapped to discrete color/shape channels (warning).
-  4. Truncated or bar-only representations of uncertain data (warning).
+## Stack
 
-### Invariant E: Complete Provenance & Zero-Backend Reproducibility
-- Append-only event ledger records every action: actor (`human` | `agent`), timestamp, command hash, previous revision, resulting revision, and Vega-Lite spec snapshot.
-- Full local reproducibility in the browser with zero external server dependencies.
+Vite + React + TypeScript, react-konva for the canvas, vega/vega-lite/vega-embed
+for the single-chart panel only, Tailwind for chrome, `localStorage` for the
+manual-UI layer. No Redux. No Recharts — if present, it is leftover cruft
+from an earlier build pass and should be removed along with its dependency
+entry.
 
-## 3. Agent Experience (AX) Principles
-- **Context Budget Protection**: Read tools (such as `inspect_dataset_fields`) must strictly cap returned columns (max 12) and sample values (max 5) to stay within `<1.5 KB` payload budgets (~400 tokens).
-- **Structured Error Diagnostics**: Never return vague text strings. Return typed validation issues containing `path`, `severity`, and an actionable `nextAction` message.
-- **Strict Typed Schemas**: Use standard JSON Schema Draft 2020-12 / Draft-07 compatible types with enum constraints for channel types and marks.
+## Where to look before assuming something is missing
+
+`domain-types.ts` (original single-chart model, still authoritative),
+`domain-types-v2-multipanel.ts` (Figure/Panel/Layer/Theme composition, states
+the WebMCP scope boundary explicitly in its header), the four
+`tool-schemas/*.schema.json` files (use `apply_figure_revision.v2`, the
+original is superseded), `GEMINI_BUILD_PROMPT_FULL.md` and its
+`GEMINI_BUILD_PROMPT_ADDENDUM.md`.
+
+## Build report discipline
+
+Any change to this codebase — by a human or an agent — should be reportable
+as `CHANGED / DELETED / UNCHANGED BUT SUSPECT / NO-OP` against a named
+defect or feature, not as free-form prose claiming something is "done."

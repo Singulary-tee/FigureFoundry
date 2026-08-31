@@ -1,0 +1,118 @@
+import { CanvasTheme } from '../../types/multipanel';
+
+export const DEFAULT_FIGUREFOUNDRY_THEME: CanvasTheme = {
+  id: 'default-figurefoundry',
+  name: 'Default FigureFoundry',
+  journalTarget: 'Publication Standard',
+  colors: {
+    primary: '#24b47e',
+    secondary: '#94a3b8',
+    background: '#ffffff',
+    cardBackground: '#ffffff',
+    gridline: '#e2e8f0',
+    text: '#0f172a',
+    mutedText: '#64748b',
+    border: '#e2e8f0',
+    accent: '#3ecf8e',
+    pooledDiamond: '#24b47e',
+    controlBar: '#94a3b8',
+  },
+};
+
+export const NATURE_THEME: CanvasTheme = {
+  id: 'nature',
+  name: 'Nature',
+  journalTarget: 'Nature',
+  colors: {
+    primary: '#24b47e',
+    secondary: '#94a3b8',
+    background: '#ffffff',
+    cardBackground: '#ffffff',
+    gridline: '#e2e8f0',
+    text: '#0f172a',
+    mutedText: '#64748b',
+    border: '#e2e8f0',
+    accent: '#3ecf8e',
+    pooledDiamond: '#24b47e',
+    controlBar: '#94a3b8',
+  },
+};
+
+export const BUILT_IN_THEMES: CanvasTheme[] = [
+  DEFAULT_FIGUREFOUNDRY_THEME,
+  NATURE_THEME,
+  {
+    id: 'classic-clinical',
+    name: 'Classic Clinical',
+    journalTarget: 'NEJM / Lancet',
+    colors: {
+      primary: '#059669',
+      secondary: '#64748b',
+      background: '#ffffff',
+      cardBackground: '#ffffff',
+      gridline: '#e2e8f0',
+      text: '#1e293b',
+      mutedText: '#475569',
+      border: '#cbd5e1',
+      accent: '#10b981',
+      pooledDiamond: '#059669',
+      controlBar: '#94a3b8',
+    },
+  },
+  {
+    id: 'cell',
+    name: 'Cell',
+    journalTarget: 'Cell Press',
+    colors: {
+      primary: '#2563eb',
+      secondary: '#64748b',
+      background: '#ffffff',
+      cardBackground: '#ffffff',
+      gridline: '#f1f5f9',
+      text: '#0f172a',
+      mutedText: '#64748b',
+      border: '#e2e8f0',
+      accent: '#3b82f6',
+      pooledDiamond: '#2563eb',
+      controlBar: '#94a3b8',
+    },
+  },
+  {
+    id: 'modern-minimal',
+    name: 'Modern Minimal',
+    journalTarget: 'General Scientific',
+    colors: {
+      primary: '#0f172a',
+      secondary: '#94a3b8',
+      background: '#ffffff',
+      cardBackground: '#ffffff',
+      gridline: '#f1f5f9',
+      text: '#0f172a',
+      mutedText: '#64748b',
+      border: '#e2e8f0',
+      accent: '#24b47e',
+      pooledDiamond: '#0f172a',
+      controlBar: '#94a3b8',
+    },
+  },
+  {
+    id: 'dark-minimal',
+    name: 'Dark Minimal',
+    journalTarget: 'Dark Presentation',
+    colors: {
+      primary: '#3ecf8e',
+      secondary: '#71717a',
+      background: '#18181b',
+      cardBackground: '#27272a',
+      gridline: '#3f3f46',
+      text: '#f4f4f5',
+      mutedText: '#a1a1aa',
+      border: '#3f3f46',
+      accent: '#24b47e',
+      pooledDiamond: '#3ecf8e',
+      controlBar: '#71717a',
+    },
+  },
+];
+
+export const BUILTIN_THEMES = BUILT_IN_THEMES;

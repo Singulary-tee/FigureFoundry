@@ -1,303 +1,1007 @@
-import React, { useState, useMemo, useCallback, useSyncExternalStore } from 'react';
-import { INITIAL_FIGURE_STATE } from './packages/domain/state';
+import React, { useState, useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import Konva from 'konva';
+import { DomainState, INITIAL_FIGURE_STATE } from './packages/domain/state';
 import { FigureDomainAction } from './packages/domain/reducer';
-import { globalFigureStore, exportBundle, importBundle } from './packages/domain/store';
+import { globalDomainStore, globalFigureStore, exportBundle, importBundle } from './packages/domain/store';
 import { profileDataset } from './packages/data-model/profiler';
 import { WebMcpProvider } from './packages/webmcp';
 import { FigureSpec, ExportBundle } from './types';
-import { TopNav } from './components/TopNav';
-import { EncodingPanel } from './components/EncodingPanel';
-import { VegaFigureView } from './packages/renderer-vega/VegaFigureView';
-import { TwoPhaseApprovalBanner } from './components/TwoPhaseApprovalBanner';
-import { DatasetDrawer } from './components/DatasetDrawer';
+import {
+  MultiPanelFigure,
+  Panel,
+  CanvasItem,
+  CanvasToolMode,
+  CanvasTheme,
+  PanelKind,
+} from './types/multipanel';
+import { BUILT_IN_THEMES, NATURE_THEME } from './packages/multipanel/themes';
+import { DEFAULT_MULTIPANEL_FIGURE } from './packages/multipanel/defaultFigure';
+import {
+  loadFigureFromStorage,
+  saveFigureToStorage,
+  loadCustomThemes,
+  saveCustomThemes,
+  loadActiveThemeId,
+  saveActiveThemeId,
+} from './packages/multipanel/storage';
+import {
+  exportFigureToPng,
+  exportFigureToSvg,
+  exportFigureToJson,
+  exportPanelToPng,
+  exportPanelToSvg,
+} from './packages/multipanel/exportBundle';
+import { TopBar } from './components/layout/TopBar';
+import { LeftSidebar, AppView } from './components/layout/LeftSidebar';
+import { CanvasToolbar } from './components/layout/CanvasToolbar';
+import { FigureCanvas } from './components/canvas/FigureCanvas';
+import { RightSidebar } from './components/layout/RightSidebar';
+import { FooterBar } from './components/layout/FooterBar';
+import { SaveThemeModal } from './components/modals/SaveThemeModal';
+import { DashboardView } from './components/views/DashboardView';
+import { DataView } from './components/views/DataView';
+import { AnalysesView } from './components/views/AnalysesView';
+import { NotesView } from './components/views/NotesView';
+import { SettingsView } from './components/views/SettingsView';
+import { HelpView } from './components/views/HelpView';
 import { ProvenanceDrawer } from './components/ProvenanceDrawer';
 import { WebMcpDevPanel } from './components/WebMcpDevPanel';
-import { Sliders, BarChart3, Database, History } from 'lucide-react';
+import { Sliders } from 'lucide-react';
 
-function MainWorkbench({
-  state,
-  dispatch,
-  profile,
-  theme,
-  onToggleTheme
-}: {
-  state: typeof INITIAL_FIGURE_STATE;
-  dispatch: React.Dispatch<FigureDomainAction>;
-  profile: ReturnType<typeof profileDataset>;
-  theme: 'light' | 'dark';
-  onToggleTheme: () => void;
-}) {
-  const [isDiffMode, setIsDiffMode] = useState<boolean>(true);
-  const [isDatasetDrawerOpen, setIsDatasetDrawerOpen] = useState(false);
+export default function App() {
+  // ---
+  const [currentView, setCurrentView] = useState<AppView>('dashboard');
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
+  const [customThemes, setCustomThemes] = useState<CanvasTheme[]>([]);
+  const [activeThemeId, setActiveThemeId] = useState<string>('nature');
+  const [figure, setFigure] = useState<MultiPanelFigure | null>(DEFAULT_MULTIPANEL_FIGURE as any);
+  const [selectedPanelId, setSelectedPanelId] = useState<string | null>('panel-a');
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [toolMode, setToolMode] = useState<CanvasToolMode>('select');
+  const [zoom, setZoom] = useState<number>(0.85);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+
+  // History stack for Undo / Redo
+  const [history, setHistory] = useState<MultiPanelFigure[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+
+  // Modals & Panels
+  const [isSaveThemeModalOpen, setIsSaveThemeModalOpen] = useState(false);
   const [isProvenanceDrawerOpen, setIsProvenanceDrawerOpen] = useState(false);
   const [isWebMcpDevPanelOpen, setIsWebMcpDevPanelOpen] = useState(false);
-  const [mobileActiveTab, setMobileActiveTab] = useState<'canvas' | 'encodings' | 'dataset' | 'history'>('canvas');
+  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(true);
+  const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
+  const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
 
-  const handleProposeDirectEdit = (newSpec: FigureSpec) => {
-    dispatch({
-      type: 'PROPOSE_REVISION',
-      payload: {
-        proposedSpec: newSpec,
-        basedOnRevision: state.currentRevision,
-        actor: 'human'
+  const stageRef = useRef<Konva.Stage | null>(null);
+
+  // Initialize from localStorage on mount
+  useEffect(() => {
+    const loadedFig = loadFigureFromStorage();
+    const loadedThemes = loadCustomThemes();
+    const loadedThemeId = loadActiveThemeId();
+
+    setFigure(loadedFig);
+    setCustomThemes(loadedThemes);
+    setActiveThemeId(loadedThemeId);
+    setHistory([loadedFig]);
+    setHistoryIndex(0);
+  }, []);
+
+  // Sync dark class on root document
+  useEffect(() => {
+    if (themeMode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [themeMode]);
+
+  // Compute active theme
+  const allThemes = useMemo(() => [...BUILT_IN_THEMES, ...customThemes], [customThemes]);
+  const activeTheme = useMemo(() => {
+    return allThemes.find((t) => t.id === activeThemeId) || NATURE_THEME;
+  }, [allThemes, activeThemeId]);
+
+  // Auto-save figure to localStorage with debounce
+  useEffect(() => {
+    setSaveStatus('saving');
+    const timer = setTimeout(() => {
+      saveFigureToStorage(figure);
+      setSaveStatus('saved');
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [figure]);
+
+  // Helper to commit state mutation with undo/redo history tracking
+  const updateFigureWithHistory = useCallback(
+    (updater: (prev: MultiPanelFigure) => MultiPanelFigure) => {
+      setFigure((prev) => {
+        const next = updater(prev);
+        setHistory((prevHist) => {
+          const truncated = prevHist.slice(0, historyIndex + 1);
+          const nextHist = [...truncated, next];
+          if (nextHist.length > 30) {
+            return nextHist.slice(nextHist.length - 30);
+          }
+          return nextHist;
+        });
+        setHistoryIndex((prevIdx) => Math.min(prevIdx + 1, 29));
+        return next;
+      });
+    },
+    [historyIndex]
+  );
+
+  // Undo / Redo handlers
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      const targetIdx = historyIndex - 1;
+      const targetFig = history[targetIdx];
+      setHistoryIndex(targetIdx);
+      setFigure(targetFig);
+      saveFigureToStorage(targetFig);
+    }
+  }, [historyIndex, history]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const targetIdx = historyIndex + 1;
+      const targetFig = history[targetIdx];
+      setHistoryIndex(targetIdx);
+      setFigure(targetFig);
+      saveFigureToStorage(targetFig);
+    }
+  }, [historyIndex, history]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input / textarea
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
       }
+
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      } else if (e.key === 'v' || e.key === 'V') {
+        setToolMode('select');
+      } else if (e.key === 'h' || e.key === 'H') {
+        setToolMode('pan');
+      } else if (e.key === 'z' || e.key === 'Z') {
+        setToolMode('zoom');
+      } else if (e.key === 't' || e.key === 'T') {
+        setToolMode('text');
+      } else if (e.key === 'r' || e.key === 'R') {
+        setToolMode('shape');
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        handleDeleteSelected();
+      } else if (e.key === 'Escape') {
+        setSelectedPanelId(null);
+        setSelectedItemId(null);
+        setToolMode('select');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // Figure title rename
+  const handleRenameFigure = (newTitle: string) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      name: newTitle,
+    }));
+  };
+
+  // Panel Frame update
+  const handleUpdatePanelFrame = (
+    panelId: string,
+    frame: { x: number; y: number; width: number; height: number }
+  ) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      panels: prev.panels.map((p) => (p.id === panelId ? { ...p, frame } : p)),
+    }));
+  };
+
+  // Panel Spec update
+  const handleUpdatePanelSpec = (panelId: string, spec: any) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      panels: prev.panels.map((p) => (p.id === panelId ? { ...p, spec } : p)),
+    }));
+  };
+
+  // Convert Panel Kind
+  const handleConvertPanelKind = (panelId: string, newKind: PanelKind) => {
+    updateFigureWithHistory((prev) => {
+      const panel = prev.panels.find((p) => p.id === panelId);
+      if (!panel) return prev;
+
+      let newSpec: any;
+      if (newKind === 'forest-plot') {
+        newSpec = {
+          kind: 'forest-plot',
+          title: 'Odds Ratio (95% CI)',
+          model: 'IV, Random Effects',
+          effectMeasure: 'Odds Ratio (OR)',
+          xAxis: { scale: 'log', min: 0.1, max: 10, referenceLine: 1 },
+          showCi95: true,
+          showWeights: true,
+          showDataPoints: true,
+          showErrorBars: true,
+          showReferenceBars: true,
+          showLabels: true,
+          showAxes: true,
+          studies: [
+            { id: 's1', study: 'Study A (2020)', effect: 0.65, ciLower: 0.42, ciUpper: 0.98, weight: 24.5 },
+            { id: 's2', study: 'Study B (2021)', effect: 0.82, ciLower: 0.58, ciUpper: 1.15, weight: 35.2 },
+            { id: 's3', study: 'Study C (2023)', effect: 0.55, ciLower: 0.35, ciUpper: 0.85, weight: 40.3 },
+          ],
+          pooledEstimate: { effect: 0.68, ciLower: 0.52, ciUpper: 0.88, weightTotal: 100, label: 'Total (95% CI)' },
+        };
+      } else if (newKind === 'funnel-plot') {
+        newSpec = {
+          kind: 'funnel-plot',
+          title: 'Funnel Plot',
+          xAxis: { min: -2, max: 2, title: 'Odds Ratio (log scale)' },
+          yAxis: { min: 0.0, max: 2.0, title: 'SE (log OR)' },
+          showFunnelGuides: true,
+          showDataPoints: true,
+          showLabels: true,
+          showAxes: true,
+          points: [
+            { id: 'p1', study: 'Study 1', effect: -0.4, standardError: 0.3 },
+            { id: 'p2', study: 'Study 2', effect: 0.2, standardError: 0.6 },
+            { id: 'p3', study: 'Study 3', effect: -0.1, standardError: 0.9 },
+          ],
+        };
+      } else if (newKind === 'grouped-bar') {
+        newSpec = {
+          kind: 'grouped-bar',
+          title: 'Outcome Rates',
+          yAxis: { min: 0, max: 40, title: 'Event Rate (%)' },
+          groups: [
+            { id: 'g1', category: 'Bleeding', treatmentVal: 18, controlVal: 28 },
+            { id: 'g2', category: 'Mortality', treatmentVal: 12, controlVal: 22 },
+          ],
+          legend: { treatmentLabel: 'Treatment', controlLabel: 'Control' },
+          showDataPoints: true,
+          showLabels: true,
+          showAxes: true,
+          showGrid: true,
+        };
+      } else if (newKind === 'subgroup-analysis') {
+        newSpec = {
+          kind: 'subgroup-analysis',
+          title: 'Subgroup Analysis',
+          xAxis: { min: 0.1, max: 10, referenceLine: 1 },
+          subgroups: [
+            { id: 'sg1', groupName: 'Group 1', effect: 0.68, ciLower: 0.5, ciUpper: 0.93, iSquared: 42 },
+            { id: 'sg2', groupName: 'Group 2', effect: 0.75, ciLower: 0.54, ciUpper: 1.04, iSquared: 28 },
+          ],
+          showDataPoints: true,
+          showErrorBars: true,
+          showReferenceBars: true,
+          showLabels: true,
+          showAxes: true,
+        };
+      } else if (newKind === 'text-caption') {
+        newSpec = {
+          kind: 'text-caption',
+          title: 'Figure Caption',
+          captionText: 'Detailed scientific notes and methodology overview.',
+          fontSize: 12,
+        };
+      } else {
+        newSpec = {
+          kind: 'single-chart',
+          isAgentEditable: true,
+          spec: {
+            title: 'Agent Editable Chart',
+            mark: 'bar',
+            encoding: {
+              x: { field: 'species', type: 'nominal' },
+              y: { field: 'body_mass_g', type: 'quantitative', aggregate: 'mean' },
+            },
+          },
+        };
+      }
+
+      return {
+        ...prev,
+        panels: prev.panels.map((p) => (p.id === panelId ? { ...p, spec: newSpec } : p)),
+      };
     });
   };
 
-  const handleDirectApply = (newSpec: FigureSpec) => {
-    dispatch({
-      type: 'DIRECT_HUMAN_EDIT',
-      payload: {
-        newSpec
-      }
+  // Layer Visibility & Lock Toggles
+  const handleToggleLayerVisibility = (panelId: string) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      layers: prev.layers.map((l) => (l.panelId === panelId ? { ...l, visible: !l.visible } : l)),
+    }));
+  };
+
+  const handleToggleLayerLock = (panelId: string) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      layers: prev.layers.map((l) => (l.panelId === panelId ? { ...l, locked: !l.locked } : l)),
+    }));
+  };
+
+  // Layer Reordering
+  const handleReorderLayer = (panelId: string, direction: 'up' | 'down') => {
+    updateFigureWithHistory((prev) => {
+      const idx = prev.layers.findIndex((l) => l.panelId === panelId);
+      if (idx === -1) return prev;
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= prev.layers.length) return prev;
+
+      const newLayers = [...prev.layers];
+      const temp = newLayers[idx];
+      newLayers[idx] = newLayers[targetIdx];
+      newLayers[targetIdx] = temp;
+
+      return {
+        ...prev,
+        layers: newLayers.map((l, i) => ({ ...l, order: i })),
+      };
     });
   };
+
+  // Delete Layer / Panel
+  const handleDeleteLayer = (panelId: string) => {
+    updateFigureWithHistory((prev) => {
+      if (prev.panels.length <= 1) return prev;
+      const nextPanels = prev.panels.filter((p) => p.id !== panelId);
+      const nextLayers = prev.layers
+        .filter((l) => l.panelId !== panelId)
+        .map((l, idx) => ({ ...l, order: idx }));
+      return {
+        ...prev,
+        panels: nextPanels,
+        layers: nextLayers,
+      };
+    });
+    if (selectedPanelId === panelId) {
+      const remaining = figure.panels.find((p) => p.id !== panelId);
+      setSelectedPanelId(remaining ? remaining.id : null);
+    }
+  };
+
+  // Canvas Settings (Resolution / Dimensions)
+  const handleUpdateCanvasSettings = (settings: { width: number; height: number; dpi: number; background: string }) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      canvasSize: {
+        width: settings.width,
+        height: settings.height,
+      },
+    }));
+  };
+
+  // Elements Toggle (Axes, Grid, Data Points, Error Bars, etc.)
+  const handleToggleElement = (elementKey: string) => {
+    if (!selectedPanelId) return;
+    updateFigureWithHistory((prev) => {
+      const panel = prev.panels.find((p) => p.id === selectedPanelId);
+      if (!panel) return prev;
+      const currentVal = (panel.spec as any)[elementKey];
+      const nextVal = currentVal === undefined ? false : !currentVal;
+
+      return {
+        ...prev,
+        panels: prev.panels.map((p) =>
+          p.id === selectedPanelId
+            ? {
+                ...p,
+                spec: {
+                  ...p.spec,
+                  [elementKey]: nextVal,
+                },
+              }
+            : p
+        ),
+      };
+    });
+  };
+
+  // Manual Canvas Items
+  const handleAddManualItem = (item: CanvasItem) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      manualItems: [...prev.manualItems, item],
+    }));
+    setToolMode('select');
+  };
+
+  const handleUpdateManualItem = (item: CanvasItem) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      manualItems: prev.manualItems.map((m) => (m.id === item.id ? item : m)),
+    }));
+  };
+
+  const handleUploadImage = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const newItem: CanvasItem = {
+        id: `img-${Date.now()}`,
+        type: 'image',
+        src,
+        x: 200,
+        y: 200,
+        width: 200,
+        height: 150,
+        order: figure.manualItems.length,
+      };
+      handleAddManualItem(newItem);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Delete Selected (Panel or Item)
+  const handleDeleteSelected = () => {
+    if (selectedPanelId) {
+      updateFigureWithHistory((prev) => ({
+        ...prev,
+        panels: prev.panels.filter((p) => p.id !== selectedPanelId),
+        layers: prev.layers.filter((l) => l.panelId !== selectedPanelId),
+      }));
+      setSelectedPanelId(null);
+    } else if (selectedItemId) {
+      updateFigureWithHistory((prev) => ({
+        ...prev,
+        manualItems: prev.manualItems.filter((m) => m.id !== selectedItemId),
+      }));
+      setSelectedItemId(null);
+    }
+  };
+
+  // Duplicate Selected
+  const handleDuplicateSelected = () => {
+    if (selectedPanelId) {
+      const panel = figure.panels.find((p) => p.id === selectedPanelId);
+      if (!panel) return;
+      const newId = `panel-${Date.now()}`;
+      const newLetter = String.fromCharCode(65 + figure.panels.length);
+      const newPanel: Panel = {
+        ...panel,
+        id: newId,
+        letter: newLetter,
+        label: `Panel ${newLetter}`,
+        frame: {
+          ...panel.frame,
+          x: panel.frame.x + 30,
+          y: panel.frame.y + 30,
+        },
+      };
+      updateFigureWithHistory((prev) => ({
+        ...prev,
+        panels: [...prev.panels, newPanel],
+        layers: [
+          ...prev.layers,
+          {
+            id: `layer-${newId}`,
+            name: `Panel ${newLetter}`,
+            visible: true,
+            locked: false,
+            panelId: newId,
+            order: prev.layers.length,
+          },
+        ],
+      }));
+      setSelectedPanelId(newId);
+    }
+  };
+
+  // Toggle Lock Selected
+  const handleToggleLockSelected = () => {
+    if (selectedPanelId) {
+      handleToggleLayerLock(selectedPanelId);
+    } else if (selectedItemId) {
+      updateFigureWithHistory((prev) => ({
+        ...prev,
+        manualItems: prev.manualItems.map((m) =>
+          m.id === selectedItemId ? { ...m, locked: !m.locked } : m
+        ),
+      }));
+    }
+  };
+
+  // Add New Panel from Left Sidebar '+'
+  const handleAddNewPanel = () => {
+    const newId = `panel-${Date.now()}`;
+    const newLetter = String.fromCharCode(65 + figure.panels.length);
+    const newPanel: Panel = {
+      id: newId,
+      letter: newLetter,
+      label: `Panel ${newLetter}`,
+      frame: { x: 100, y: 100, width: 500, height: 320 },
+      spec: {
+        kind: 'forest-plot',
+        title: `Study Results (${newLetter})`,
+        model: 'IV, Random Effects',
+        effectMeasure: 'Odds Ratio (OR)',
+        xAxis: { scale: 'log', min: 0.1, max: 10, referenceLine: 1 },
+        showCi95: true,
+        showWeights: true,
+        showDataPoints: true,
+        showErrorBars: true,
+        showReferenceBars: true,
+        showLabels: true,
+        showAxes: true,
+        studies: [
+          { id: 'ns1', study: 'New Study Alpha', effect: 0.72, ciLower: 0.51, ciUpper: 0.98, weight: 45.0 },
+          { id: 'ns2', study: 'New Study Beta', effect: 0.61, ciLower: 0.38, ciUpper: 0.89, weight: 55.0 },
+        ],
+        pooledEstimate: { effect: 0.66, ciLower: 0.5, ciUpper: 0.86, weightTotal: 100, label: 'Total (95% CI)' },
+      },
+    };
+
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      panels: [...prev.panels, newPanel],
+      layers: [
+        ...prev.layers,
+        {
+          id: `layer-${newId}`,
+          name: `Panel ${newLetter}`,
+          visible: true,
+          locked: false,
+          panelId: newId,
+          order: prev.layers.length,
+        },
+      ],
+    }));
+    setSelectedPanelId(newId);
+  };
+
+  // Arrange Bring to Front / Send to Back
+  const handleArrange = (action: 'front' | 'back') => {
+    if (selectedPanelId) {
+      updateFigureWithHistory((prev) => {
+        const layer = prev.layers.find((l) => l.panelId === selectedPanelId);
+        if (!layer) return prev;
+        const otherLayers = prev.layers.filter((l) => l.panelId !== selectedPanelId);
+        const reordered = action === 'front' ? [...otherLayers, layer] : [layer, ...otherLayers];
+        return {
+          ...prev,
+          layers: reordered.map((l, i) => ({ ...l, order: i })),
+        };
+      });
+    }
+  };
+
+  // Theme Management
+  const handleSelectTheme = (themeId: string) => {
+    setActiveThemeId(themeId);
+    saveActiveThemeId(themeId);
+  };
+
+  const handleSaveCustomTheme = (newTheme: CanvasTheme) => {
+    const nextCustom = [...customThemes, newTheme];
+    setCustomThemes(nextCustom);
+    saveCustomThemes(nextCustom);
+    setActiveThemeId(newTheme.id);
+    saveActiveThemeId(newTheme.id);
+  };
+
+  // Exports
+  const handleExportFullPng = () => {
+    if (stageRef.current) {
+      exportFigureToPng(stageRef.current, `${figure.name.toLowerCase().replace(/\s+/g, '-')}.png`);
+    }
+  };
+
+  const handleExportFullSvg = () => {
+    if (stageRef.current) {
+      exportFigureToSvg(stageRef.current, `${figure.name.toLowerCase().replace(/\s+/g, '-')}.svg`);
+    }
+  };
+
+  const handleExportJson = () => {
+    exportFigureToJson(figure, `${figure.name.toLowerCase().replace(/\s+/g, '-')}-bundle.json`);
+  };
+
+  const handleExportPanelPng = (panelId: string) => {
+    if (stageRef.current) {
+      exportPanelToPng(stageRef.current, panelId, `panel-${panelId}.png`);
+    }
+  };
+
+  const handleExportPanelSvg = (panelId: string) => {
+    if (stageRef.current) {
+      exportPanelToSvg(stageRef.current, panelId, `panel-${panelId}.svg`);
+    }
+  };
+
+  // WebMCP Domain Store Sync
+  const domainState = useSyncExternalStore(
+    globalDomainStore.subscribe.bind(globalDomainStore),
+    globalDomainStore.getState.bind(globalDomainStore),
+    globalDomainStore.getState.bind(globalDomainStore)
+  ) as DomainState;
+
+  // WebMCP Figure State Sync (Legacy/Compatibility Wrapper)
+  const figureState = useSyncExternalStore(
+    globalFigureStore.subscribe,
+    globalFigureStore.getState,
+    globalFigureStore.getState
+  ) as any;
+
+  const customDispatch = useCallback((action: any) => {
+    if (action.type === 'APPLY_PROPOSAL' || action.type === 'PROPOSE_SPEC') {
+      return globalFigureStore.dispatch(action);
+    }
+    return globalDomainStore.dispatch(action);
+  }, []);
+
+  // Synchronize figureState.spec changes to the agent-editable panel in MultiPanelFigure
+  useEffect(() => {
+    if (figureState.spec) {
+      setFigure((prev) => {
+        const editablePanel = prev.panels.find((p) => p.isAgentEditable || (p.spec as any).isAgentEditable);
+        if (!editablePanel) return prev;
+        // Check if spec changed
+        if (
+          editablePanel.spec.kind === 'single-chart' &&
+          JSON.stringify(editablePanel.spec.spec) === JSON.stringify(figureState.spec)
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          panels: prev.panels.map((p) =>
+            p.id === editablePanel.id
+              ? {
+                  ...p,
+                  spec: {
+                    kind: 'single-chart',
+                    isAgentEditable: true,
+                    spec: figureState.spec,
+                  },
+                }
+              : p
+          ),
+        };
+      });
+    }
+  }, [figureState.spec]);
+
+  // Synchronize domainState.figure changes to local figure state (e.g. when switching figures or loading a new project)
+  useEffect(() => {
+    if (!domainState.figure && currentView !== 'dashboard' && currentView !== 'settings' && currentView !== 'help') {
+      setCurrentView('dashboard');
+    }
+    
+    if (domainState.figure && domainState.figure.id !== figure?.id) {
+      setFigure(domainState.figure as any);
+      setSelectedPanelId(domainState.figure.panels[0]?.id || null);
+    }
+  }, [domainState.activeFigureId, domainState.figure, currentView]);
 
   const handleApproveUI = (previewId: string) => {
-    dispatch({
+    globalFigureStore.dispatch({
       type: 'APPROVE_PREVIEW_UI',
-      payload: { previewId }
+      payload: { previewId },
     });
   };
 
   const handleApplyRevision = (previewId: string, basedOnRevision: number) => {
-    dispatch({
+    globalFigureStore.dispatch({
       type: 'APPLY_REVISION',
       payload: {
         previewId,
         basedOnRevision,
         humanApprovalConfirmed: true,
-        actor: 'human'
-      }
+        actor: 'human',
+      },
     });
   };
 
   const handleRejectPreview = () => {
-    dispatch({ type: 'REJECT_PREVIEW' });
-  };
-
-  const handleSelectDataset = (datasetId: string) => {
-    if (!datasetId) {
-      dispatch({ type: 'CLEAR_DATASET' });
-      return;
-    }
-    dispatch({
-      type: 'LOAD_DATASET',
-      payload: { datasetId }
-    });
-  };
-
-  const handleImportDataset = (profile: ReturnType<typeof profileDataset>) => {
-    dispatch({
-      type: 'IMPORT_DATASET',
-      payload: { profile }
-    });
-    setIsDatasetDrawerOpen(false);
-  };
-
-  const handleClearDataset = () => {
-    dispatch({ type: 'CLEAR_DATASET' });
-    setIsDatasetDrawerOpen(false);
-  };
-
-  const handleExportProject = () => {
-    exportBundle(state);
-  };
-
-  const handleImportProject = (bundle: ExportBundle) => {
-    try {
-      const imported = importBundle(bundle);
-      globalFigureStore.importState(imported);
-    } catch (err: any) {
-      console.error('Import failed:', err.message);
-    }
+    globalFigureStore.dispatch({ type: 'REJECT_PREVIEW' });
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#f8f9fa] dark:bg-[#121212] text-[#18181b] dark:text-[#EDEDED] font-sans antialiased overflow-hidden transition-colors">
-      
-      <TopNav
-        activeDatasetId={state.datasetId}
-        currentRevision={state.currentRevision}
-        userDatasets={state.userDatasets || []}
-        theme={theme}
-        onToggleTheme={onToggleTheme}
-        onSelectDataset={handleSelectDataset}
-        onImportDataset={handleImportDataset}
-        onOpenDatasetDrawer={() => setIsDatasetDrawerOpen(true)}
-        onOpenProvenanceDrawer={() => setIsProvenanceDrawerOpen(true)}
-        onOpenWebMcpDevPanel={() => setIsWebMcpDevPanelOpen(true)}
-        onExportProject={handleExportProject}
-        onImportProject={handleImportProject}
-      />
-
-      <main className="flex-1 flex flex-row overflow-hidden relative min-h-0">
-        
-        <div className={`${mobileActiveTab === 'encodings' ? 'block absolute inset-0 z-20 bg-white dark:bg-[#171717]' : 'hidden'} md:block md:relative md:z-auto h-full shrink-0 min-h-0`}>
-          <EncodingPanel
-            currentSpec={state.spec}
-            profile={profile}
-            onProposeDirectEdit={handleProposeDirectEdit}
-            onDirectApply={handleDirectApply}
-            isMobileModal={mobileActiveTab === 'encodings'}
-            onCloseMobileModal={() => setMobileActiveTab('canvas')}
+    <WebMcpProvider currentState={figureState} dispatchDomainAction={customDispatch}>
+      <div className="flex flex-col h-screen w-screen bg-[#f8f9fa] dark:bg-[#121212] text-[#18181b] dark:text-[#EDEDED] font-sans antialiased overflow-hidden select-none transition-colors">
+        {/* Top Navigation Bar */}
+        {currentView === 'figures' && figure ? (
+          <TopBar
+            figureTitle={figure.name}
+            onRenameFigure={handleRenameFigure}
+            saveStatus={saveStatus}
+            canUndo={historyIndex > 0}
+            canRedo={historyIndex < history.length - 1}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            theme={themeMode}
+            onToggleTheme={() => setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'))}
+            onExportPng={handleExportFullPng}
+            onExportSvg={handleExportFullSvg}
+            onExportJson={handleExportJson}
+            onOpenWebMcpDev={() => setIsWebMcpDevPanelOpen(true)}
           />
-        </div>
+        ) : (
+          /* Immersive, clean Outer Shell Header */
+          <header className="h-14 w-full bg-white dark:bg-[#121212] border-b border-[#e4e4e7] dark:border-[#27272a] px-4 sm:px-6 flex items-center justify-between select-none shrink-0 z-40 transition-colors">
+            {/* Left: Active Workspace / Context Info */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-[#1f1f23] px-2.5 py-1 rounded-md">
+                Standard Workspace
+              </span>
+              <span className="text-xs text-zinc-400 hidden sm:inline">•</span>
+              <span className="text-xs text-zinc-400 font-mono hidden sm:inline">Guest Account Session</span>
+            </div>
 
-        {mobileActiveTab === 'dataset' && (
-          <div className="absolute inset-0 z-20 bg-white dark:bg-[#171717] md:hidden flex flex-col h-full min-h-0">
-            <DatasetDrawer
-              isOpen={true}
-              onClose={() => setMobileActiveTab('canvas')}
-              profile={profile}
-              onImportDataset={handleImportDataset}
-              onClearDataset={handleClearDataset}
-              isInline={true}
-            />
-          </div>
+            {/* Right: Theme, Quick Jump, User Profile */}
+            <div className="flex items-center gap-4">
+              {/* Quick Launch Editor */}
+              {figure && (
+                <button
+                  onClick={() => setCurrentView('figures')}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#1f1f23] dark:hover:bg-[#27272a] px-3 py-1.5 rounded-lg transition-colors cursor-pointer border border-[#e4e4e7] dark:border-[#27272a]"
+                >
+                  <span>Launch Editor</span>
+                </button>
+              )}
+
+              {/* Theme Toggle */}
+              <button
+                onClick={() => setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'))}
+                className="p-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-[#27272a] transition-colors cursor-pointer"
+              >
+                {themeMode === 'light' ? (
+                  <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Profile Avatar Badge */}
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-[#24b47e]/25 text-[#24b47e] font-bold text-xs flex items-center justify-center border border-[#24b47e]/40 select-none">
+                  GR
+                </div>
+                <div className="hidden md:flex flex-col text-left leading-none">
+                  <span className="text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5]">Guest Researcher</span>
+                  <span className="text-[10px] text-zinc-400 mt-0.5">Role: Collaborator</span>
+                </div>
+              </div>
+            </div>
+          </header>
         )}
 
-        {mobileActiveTab === 'history' && (
-          <div className="absolute inset-0 z-20 bg-white dark:bg-[#171717] md:hidden flex flex-col h-full min-h-0">
-            <ProvenanceDrawer
-              isOpen={true}
-              onClose={() => setMobileActiveTab('canvas')}
-              provenanceLedger={state.provenanceLedger}
-              currentRevision={state.currentRevision}
-              onRestoreRevision={(rev) => dispatch({ type: 'RESTORE_SNAPSHOT', payload: { targetRevision: rev } })}
-              isInline={true}
-            />
-          </div>
-        )}
-
-        <section className={`flex-1 p-3 sm:p-4 md:p-5 flex flex-col overflow-y-auto bg-[#f8f9fa] dark:bg-[#121212] min-h-0 ${mobileActiveTab === 'canvas' ? 'flex' : 'hidden md:flex'}`}>
-          
-          {state.activePreview && (
-            <TwoPhaseApprovalBanner
-              activePreview={state.activePreview}
-              onApproveUI={handleApproveUI}
-              onApplyRevision={handleApplyRevision}
-              onRejectPreview={handleRejectPreview}
+        {/* Main Work Area: Left Sidebar + (Current View Component) */}
+        <div className="flex-1 flex flex-row min-h-0 overflow-hidden relative">
+          {/* Left Sidebar */}
+          {figure && (
+            <LeftSidebar
+              figure={figure}
+              selectedPanelId={selectedPanelId}
+              activeView={currentView}
+              onSelectView={setCurrentView}
+              onSelectPanel={(id) => {
+                setSelectedPanelId(id);
+                setSelectedItemId(null);
+              }}
+              onToggleLayerVisibility={handleToggleLayerVisibility}
+              onToggleLayerLock={handleToggleLayerLock}
+              onReorderLayer={handleReorderLayer}
+              onToggleElement={handleToggleElement}
+              onAddNewPanel={handleAddNewPanel}
+              onDeleteLayer={handleDeleteLayer}
+              isCollapsed={isLeftSidebarCollapsed}
+              onToggleCollapse={() => setIsLeftSidebarCollapsed(!isLeftSidebarCollapsed)}
+              figures={domainState.figures.filter((fig) => {
+                const activeProj = domainState.projects.find((p) => p.id === domainState.activeProjectId);
+                return activeProj?.figureIds.includes(fig.id);
+              })}
+              activeFigureId={domainState.activeFigureId}
+              datasets={domainState.datasets.filter((ds) => {
+                const activeProj = domainState.projects.find((p) => p.id === domainState.activeProjectId);
+                const activeWs = domainState.workspaces.find((w) => w.id === domainState.activeWorkspaceId);
+                return (activeProj?.datasetIds || []).includes(ds.id) || (activeWs?.sharedDatasetIds || []).includes(ds.id);
+              })}
+              selectedDatasetId={domainState.selectedDatasetId}
+              onSwitchFigure={(figId) => {
+                globalFigureStore.dispatch({ type: 'SWITCH_FIGURE', payload: figId });
+              }}
+              onCreateFigure={(name) => {
+                globalFigureStore.dispatch({ type: 'CREATE_FIGURE', payload: name ? { name } : undefined });
+              }}
+              onSelectDataset={(dsId) => {
+                globalFigureStore.dispatch({ type: 'SELECT_DATASET', payload: dsId });
+              }}
             />
           )}
 
-          <VegaFigureView
-            spec={state.spec}
-            activePreview={state.activePreview}
-            profile={profile}
-            isDiffMode={isDiffMode}
-            onToggleDiffMode={() => setIsDiffMode(!isDiffMode)}
-            theme={theme}
-          />
-        </section>
-      </main>
+          {/* Figures Canvas View */}
+          {currentView === 'figures' && figure && (
+            <>
+              {/* Central Canvas Zone */}
+              <div className="flex-1 flex flex-col min-w-0 min-h-0 relative overflow-hidden">
+                {/* Canvas Toolbar */}
+                <CanvasToolbar
+                  toolMode={toolMode}
+                  onSelectToolMode={setToolMode}
+                  onUploadImage={handleUploadImage}
+                  onArrange={handleArrange}
+                />
 
-      <nav className="md:hidden bg-white dark:bg-[#171717] border-t border-[#e4e4e7] dark:border-[#262626] px-2 py-1 flex items-center justify-around z-30 shrink-0 min-h-[56px] transition-colors">
-        <button
-          onClick={() => setMobileActiveTab('canvas')}
-          className={`flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer ${
-            mobileActiveTab === 'canvas' ? 'text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 font-semibold' : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4 shrink-0" />
-          <span>Figure</span>
-        </button>
+                {/* Stage Canvas */}
+                <div className="flex-1 min-h-0 relative flex">
+                  <FigureCanvas
+                    figure={figure}
+                    selectedPanelId={selectedPanelId}
+                    selectedItemId={selectedItemId}
+                    activeTheme={activeTheme}
+                    toolMode={toolMode}
+                    zoom={zoom}
+                    onZoomChange={setZoom}
+                    panOffset={panOffset}
+                    onPanChange={setPanOffset}
+                    onSelectPanel={(id) => {
+                      setSelectedPanelId(id);
+                      if (id) setSelectedItemId(null);
+                    }}
+                    onSelectItem={(id) => {
+                      setSelectedItemId(id);
+                      if (id) setSelectedPanelId(null);
+                    }}
+                    onUpdatePanelFrame={handleUpdatePanelFrame}
+                    onUpdateManualItem={handleUpdateManualItem}
+                    onAddManualItem={handleAddManualItem}
+                    onDeleteSelected={handleDeleteSelected}
+                    onDuplicateSelected={handleDuplicateSelected}
+                    onToggleLockSelected={handleToggleLockSelected}
+                    stageRef={stageRef}
+                    datasetId={figureState.datasetId}
+                    isPendingApproval={!!figureState.activePreview}
+                  />
+                </div>
 
-        <button
-          onClick={() => setMobileActiveTab('encodings')}
-          className={`flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer ${
-            mobileActiveTab === 'encodings' ? 'text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 font-semibold' : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-          }`}
-        >
-          <Sliders className="w-4 h-4 shrink-0" />
-          <span>Controls</span>
-        </button>
+                {/* Bottom Footer Bar */}
+                <FooterBar
+                  activeTheme={activeTheme}
+                  customThemes={customThemes}
+                  onSelectTheme={handleSelectTheme}
+                  zoom={zoom}
+                  onZoomIn={() => setZoom((z) => Math.min(2.5, Math.round((z + 0.1) * 100) / 100))}
+                  onZoomOut={() => setZoom((z) => Math.max(0.3, Math.round((z - 0.1) * 100) / 100))}
+                  onResetZoom={() => {
+                    setZoom(1.0);
+                    setPanOffset({ x: 0, y: 0 });
+                  }}
+                  onFitCanvas={() => {
+                    setZoom(0.85);
+                    setPanOffset({ x: 0, y: 0 });
+                  }}
+                  canvasWidth={figure.canvasSize.width}
+                  canvasHeight={figure.canvasSize.height}
+                />
+              </div>
 
-        <button
-          onClick={() => setMobileActiveTab('dataset')}
-          className={`flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer ${
-            mobileActiveTab === 'dataset' ? 'text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 font-semibold' : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-          }`}
-        >
-          <Database className="w-4 h-4 shrink-0" />
-          <span>Dataset</span>
-        </button>
+              {/* Right Sidebar */}
+              <RightSidebar
+                figure={figure}
+                selectedPanelId={selectedPanelId}
+                activeTheme={activeTheme}
+                onUpdatePanelSpec={handleUpdatePanelSpec}
+                onConvertPanelKind={handleConvertPanelKind}
+                onOpenSaveThemeModal={() => setIsSaveThemeModalOpen(true)}
+                onExportPanelPng={handleExportPanelPng}
+                onExportPanelSvg={handleExportPanelSvg}
+                onExportFullPng={handleExportFullPng}
+                onExportFullSvg={handleExportFullSvg}
+                onExportJson={handleExportJson}
+                isPendingApproval={!!figureState.activePreview}
+                isOpenMobile={isMobileInspectorOpen}
+                onCloseMobile={() => setIsMobileInspectorOpen(false)}
+                isCollapsed={isRightSidebarCollapsed}
+                onToggleCollapse={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
+              />
+            </>
+          )}
 
-        <button
-          onClick={() => setMobileActiveTab('history')}
-          className={`flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer ${
-            mobileActiveTab === 'history' ? 'text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 font-semibold' : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-          }`}
-        >
-          <History className="w-4 h-4 shrink-0" />
-          <span>History</span>
-        </button>
-      </nav>
+          {/* Dashboard View */}
+          {currentView === 'dashboard' && (
+            <DashboardView
+              domainState={domainState}
+              onNavigate={setCurrentView}
+              onDispatchAction={customDispatch}
+            />
+          )}
 
-      <DatasetDrawer
-        isOpen={isDatasetDrawerOpen}
-        onClose={() => setIsDatasetDrawerOpen(false)}
-        profile={profile}
-        onImportDataset={handleImportDataset}
-        onClearDataset={handleClearDataset}
-      />
+          {/* Data Management View */}
+          {currentView === 'data' && (
+            <DataView
+              domainState={domainState}
+              onNavigate={setCurrentView}
+            />
+          )}
 
-      <ProvenanceDrawer
-        isOpen={isProvenanceDrawerOpen}
-        onClose={() => setIsProvenanceDrawerOpen(false)}
-        provenanceLedger={state.provenanceLedger}
-        currentRevision={state.currentRevision}
-        onRestoreRevision={(rev) => dispatch({ type: 'RESTORE_SNAPSHOT', payload: { targetRevision: rev } })}
-      />
+          {/* Statistical Analyses View */}
+          {currentView === 'analyses' && figure && (
+            <AnalysesView
+              figure={figure}
+              onUpdatePanelSpec={handleUpdatePanelSpec}
+              onNavigate={setCurrentView}
+            />
+          )}
 
-      <WebMcpDevPanel
-        isOpen={isWebMcpDevPanelOpen}
-        onClose={() => setIsWebMcpDevPanelOpen(false)}
-      />
-    </div>
-  );
-}
+          {/* Research Notes & Manuscript Studio View */}
+          {currentView === 'notes' && figure && (
+            <NotesView
+              figure={figure}
+              domainState={domainState}
+              onNavigate={setCurrentView}
+            />
+          )}
 
-export default function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+          {/* Settings View */}
+          {currentView === 'settings' && figure && (
+            <SettingsView
+              figure={figure}
+              onUpdateCanvasSize={(w, h) =>
+                handleUpdateCanvasSettings({ width: w, height: h, dpi: 300, background: '#ffffff' })
+              }
+              onNavigate={setCurrentView}
+            />
+          )}
 
-  React.useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [theme]);
+          {/* Help & Guides View */}
+          {currentView === 'help' && (
+            <HelpView
+              onNavigate={setCurrentView}
+            />
+          )}
+        </div>
 
-  const handleToggleTheme = useCallback(() => {
-    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
-  }, []);
+        {/* Save As Theme Modal */}
+        <SaveThemeModal
+          isOpen={isSaveThemeModalOpen}
+          onClose={() => setIsSaveThemeModalOpen(false)}
+          onSaveTheme={handleSaveCustomTheme}
+          currentTheme={activeTheme}
+        />
 
-  const state = useSyncExternalStore(
-    cb => globalFigureStore.subscribe(cb),
-    () => globalFigureStore.getState(),
-    () => globalFigureStore.getState()
-  );
+        {/* Provenance Drawer */}
+        <ProvenanceDrawer
+          isOpen={isProvenanceDrawerOpen}
+          onClose={() => setIsProvenanceDrawerOpen(false)}
+          provenanceLedger={figureState.provenanceLedger}
+          currentRevision={figureState.currentRevision}
+          onRestoreRevision={(rev) =>
+            globalFigureStore.dispatch({ type: 'RESTORE_SNAPSHOT', payload: { targetRevision: rev } })
+          }
+        />
 
-  const profile = useMemo(() => profileDataset(state.datasetId), [state.datasetId]);
-
-  const customDispatch = useCallback(
-    (action: FigureDomainAction) => {
-      return globalFigureStore.dispatch(action);
-    },
-    []
-  );
-
-  const dispatch = useCallback(
-    (action: FigureDomainAction) => {
-      globalFigureStore.dispatch(action);
-    },
-    []
-  );
-
-  return (
-    <WebMcpProvider currentState={state} dispatchDomainAction={customDispatch}>
-      <MainWorkbench state={state} dispatch={dispatch} profile={profile} theme={theme} onToggleTheme={handleToggleTheme} />
+        {/* WebMCP Dev Panel */}
+        <WebMcpDevPanel
+          isOpen={isWebMcpDevPanelOpen}
+          onClose={() => setIsWebMcpDevPanelOpen(false)}
+        />
+      </div>
     </WebMcpProvider>
   );
 }

@@ -5,7 +5,6 @@ import { FigureDomainAction, ApplyResult } from '../domain/reducer';
 import { globalFigureStore, FigureStore } from '../domain/store';
 import { proposeFigureRevision, applyFigureRevision } from '../domain/commands';
 import { BASE_WEBMCP_TOOLS, getDatasetAwareTools } from './tools';
-import { runTwoGroupTtest, runPearsonCorrelation } from '../stats';
 
 export { BASE_WEBMCP_TOOLS as WEBMCP_TOOLS, getDatasetAwareTools };
 
@@ -13,11 +12,18 @@ export class WebMcpServer {
   private dispatchDomainAction: (action: FigureDomainAction) => any;
   private getState: () => FigureState;
   private store: FigureStore;
+  private getAgentEditablePanelId: () => string;
 
-  constructor(dispatch: (action: FigureDomainAction) => any, getState: () => FigureState, store: FigureStore = globalFigureStore) {
+  constructor(
+    dispatch: (action: FigureDomainAction) => any,
+    getState: () => FigureState,
+    store: FigureStore = globalFigureStore,
+    getAgentEditablePanelId: () => string = () => 'panel-d'
+  ) {
     this.dispatchDomainAction = dispatch;
     this.getState = getState;
     this.store = store;
+    this.getAgentEditablePanelId = getAgentEditablePanelId;
   }
 
   public listTools(): WebMcpToolDefinition[] {
@@ -35,24 +41,25 @@ export class WebMcpServer {
   ): Promise<{ result: any; log: WebMcpCallLog }> {
     const startTime = performance.now();
     const currentState = this.getState();
+    const agentEditablePanelId = this.getAgentEditablePanelId();
     let result: any = null;
     let status: 'success' | 'error' | 'rejected' = 'success';
 
     try {
       switch (toolName) {
         case 'inspect_dataset_fields': {
-          const profile = profileDataset(currentState.datasetId);
+          const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
           result = {
             datasetId: profile.datasetId,
             rowCount: profile.rowCount,
-            fields: profile.fields.map(f => ({
+            fields: profile.fields.map((f) => ({
               name: f.name,
               type: f.type,
               unit: f.unit,
               missingCount: f.missingCount,
               cardinality: f.cardinality,
-              exampleValues: f.exampleValues
-            }))
+              exampleValues: f.exampleValues,
+            })),
           };
           break;
         }
@@ -61,44 +68,55 @@ export class WebMcpServer {
           const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
           const lastValidation = currentState.spec ? validateFigureSpec(currentState.spec, profile) : null;
 
-          let scientificQuestion = 'How do morphometric measurements (bill length, depth, flipper length, body mass) differ across penguin species and sexes?';
+          let scientificQuestion =
+            'How do morphometric measurements (bill length, depth, flipper length, body mass) differ across penguin species and sexes?';
           if (currentState.datasetId === 'gapminder-life-expectancy') {
-            scientificQuestion = 'What is the relationship between GDP per capita and life expectancy across different countries and continents?';
+            scientificQuestion =
+              'What is the relationship between GDP per capita and life expectancy across different countries and continents?';
           } else if (currentState.datasetId === 'seattle-weather') {
-            scientificQuestion = 'What are the trends and relationships in precipitation, maximum temperature, and wind speed in Seattle weather over time?';
+            scientificQuestion =
+              'What are the trends and relationships in precipitation, maximum temperature, and wind speed in Seattle weather over time?';
           }
 
           result = {
+            agentEditablePanelId,
             datasetId: currentState.datasetId || 'palmer-penguins',
             scientificQuestion,
             figureIntent: currentState.spec?.figureIntent || 'comparison',
             revision: currentState.currentRevision,
             currentSpec: currentState.spec,
-            lastValidation: lastValidation ? {
-              valid: lastValidation.valid,
-              issues: lastValidation.issues.map(issue => ({
-                severity: issue.severity,
-                path: issue.path,
-                message: issue.message
-              }))
-            } : null,
-            provenanceEventCount: currentState.provenanceLedger.length
-          };
-          break;
-        }
-
-        case 'inspect_figure_state': {
-          result = {
-            datasetId: currentState.datasetId,
-            currentRevision: currentState.currentRevision,
-            spec: currentState.spec,
-            activePreviewId: currentState.activePreview?.previewId || null,
-            hasPendingApproval: !!currentState.activePreview && !currentState.activePreview.approvedInUI
+            lastValidation: lastValidation
+              ? {
+                  valid: lastValidation.valid,
+                  issues: lastValidation.issues.map((issue) => ({
+                    severity: issue.severity,
+                    path: issue.path,
+                    message: issue.message,
+                  })),
+                }
+              : null,
+            provenanceEventCount: currentState.provenanceLedger.length,
           };
           break;
         }
 
         case 'propose_figure_revision': {
+          // Validate targetPanelId against the single agent-editable panel
+          if (!inputArgs.targetPanelId || inputArgs.targetPanelId !== agentEditablePanelId) {
+            status = 'rejected';
+            result = {
+              valid: false,
+              issues: [
+                {
+                  severity: 'blocking',
+                  path: 'targetPanelId',
+                  message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not agent-editable. Only '${agentEditablePanelId}' is designated as agent-editable.`,
+                },
+              ],
+            };
+            break;
+          }
+
           const candidateSpec = {
             ...currentState.spec,
             title:
@@ -108,18 +126,18 @@ export class WebMcpServer {
             figureIntent: inputArgs.figureIntent,
             mark: inputArgs.mark,
             encoding: inputArgs.encoding,
-            showsRawObservations: inputArgs.showsRawObservations,
-            uncertaintyEncoding: inputArgs.uncertaintyEncoding
+            showsRawObservations: Boolean(inputArgs.showsRawObservations),
+            uncertaintyEncoding: inputArgs.uncertaintyEncoding || 'none',
           };
 
           const domainCmdResult = proposeFigureRevision(this.store, {
             proposedSpec: candidateSpec,
             basedOnRevision: currentState.currentRevision,
             actor,
-            commandPayload: inputArgs
+            commandPayload: inputArgs,
           });
 
-          result = domainCmdResult.result || domainCmdResult.boundaryErrors;
+          result = domainCmdResult.result;
           if (!domainCmdResult.success) {
             status = 'rejected';
           }
@@ -127,116 +145,124 @@ export class WebMcpServer {
         }
 
         case 'apply_figure_revision': {
+          // 1. Validate targetPanelId
+          if (!inputArgs.targetPanelId || inputArgs.targetPanelId !== agentEditablePanelId) {
+            status = 'rejected';
+            result = {
+              status: 'rejected_unapproved',
+              newRevision: currentState.currentRevision,
+              appliedSpec: null,
+              provenanceEventId: '',
+              message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not agent-editable. Only '${agentEditablePanelId}' is designated as agent-editable.`,
+            } as ApplyResult;
+            break;
+          }
+
+          // 2. Validate preview existence and optimistic concurrency
+          if (!currentState.activePreview || currentState.activePreview.previewId !== inputArgs.previewId) {
+            status = 'rejected';
+            result = {
+              status: 'rejected_unknown_preview',
+              newRevision: currentState.currentRevision,
+              appliedSpec: null,
+              provenanceEventId: '',
+              message: `Preview ID '${inputArgs.previewId}' not found or already consumed.`,
+            } as ApplyResult;
+            break;
+          }
+
+          if (currentState.currentRevision !== inputArgs.basedOnRevision) {
+            status = 'rejected';
+            result = {
+              status: 'rejected_stale',
+              newRevision: currentState.currentRevision,
+              appliedSpec: null,
+              provenanceEventId: '',
+              message: `Project revision has advanced to Rev ${currentState.currentRevision} (was based on Rev ${inputArgs.basedOnRevision}). Re-propose against the latest revision.`,
+            } as ApplyResult;
+            break;
+          }
+
+          // 3. Native Browser Confirmation Gate (Invariant 3)
+          let userConfirmed = false;
+          const proposed = currentState.activePreview.proposedSpec;
+          const confirmMessage = `Apply proposed figure revision to ${agentEditablePanelId.toUpperCase()}?\n\nTitle: ${proposed.title || 'Untitled'}\nIntent: ${proposed.figureIntent} (${proposed.mark})\nX-Axis: ${proposed.encoding?.x?.field || 'N/A'}\nY-Axis: ${proposed.encoding?.y?.field || 'N/A'}\nRevision: Rev ${currentState.currentRevision} -> Rev ${currentState.currentRevision + 1}`;
+
+          if (typeof window !== 'undefined') {
+            if (typeof (window as any).requestUserInteraction === 'function') {
+              try {
+                const res = await (window as any).requestUserInteraction({
+                  type: 'confirm',
+                  title: 'Confirm Figure Revision',
+                  message: confirmMessage,
+                  previewId: inputArgs.previewId,
+                  proposedSpec: proposed,
+                });
+                userConfirmed = Boolean(res?.confirmed ?? res);
+              } catch (e) {
+                userConfirmed = window.confirm(confirmMessage);
+              }
+            } else if (typeof (navigator as any).modelContext?.requestUserInteraction === 'function') {
+              try {
+                const res = await (navigator as any).modelContext.requestUserInteraction({
+                  type: 'confirm',
+                  title: 'Confirm Figure Revision',
+                  message: confirmMessage,
+                  previewId: inputArgs.previewId,
+                  proposedSpec: proposed,
+                });
+                userConfirmed = Boolean(res?.confirmed ?? res);
+              } catch (e) {
+                userConfirmed = window.confirm(confirmMessage);
+              }
+            } else {
+              userConfirmed = window.confirm(confirmMessage);
+            }
+          } else {
+            userConfirmed = true;
+          }
+
+          if (!userConfirmed) {
+            status = 'rejected';
+            result = {
+              status: 'rejected_unapproved',
+              newRevision: currentState.currentRevision,
+              appliedSpec: null,
+              provenanceEventId: '',
+              message: 'Revision was declined in the native confirmation prompt.',
+            } as ApplyResult;
+            break;
+          }
+
+          // 4. Mark approved and commit
+          this.store.dispatch({
+            type: 'APPROVE_PREVIEW_UI',
+            payload: { previewId: inputArgs.previewId },
+          });
+
           const domainCmdResult = applyFigureRevision(this.store, {
             previewId: inputArgs.previewId,
             basedOnRevision: inputArgs.basedOnRevision,
-            humanApprovalConfirmed: inputArgs.humanApprovalConfirmed,
-            actor
+            humanApprovalConfirmed: true,
+            actor,
           });
 
-          result = domainCmdResult.result || domainCmdResult.boundaryErrors;
+          result = domainCmdResult.result;
           if (!domainCmdResult.success) {
             status = 'rejected';
           }
           break;
         }
 
-        case 'validate_figure_revision': {
-          const profile = profileDataset(currentState.datasetId);
-          const candidateSpec = {
-            ...currentState.spec,
-            figureIntent: inputArgs.figureIntent,
-            mark: inputArgs.mark,
-            encoding: inputArgs.encoding,
-            showsRawObservations: inputArgs.showsRawObservations,
-            uncertaintyEncoding: inputArgs.uncertaintyEncoding
-          };
-          result = validateFigureSpec(candidateSpec, profile);
-          break;
-        }
-
-        case 'perform_statistical_test': {
-          const profile = profileDataset(currentState.datasetId);
-          if (inputArgs.testType === 'correlation') {
-            const corr = runPearsonCorrelation(profile.records, inputArgs.valueField, inputArgs.groupField);
-            result = {
-              testName: 'Pearson Correlation Analysis',
-              statisticName: 'r',
-              statisticValue: corr.r,
-              degreesOfFreedom: corr.n - 2,
-              pValue: corr.pValue,
-              significanceStars: corr.stars,
-              groupStats: [],
-              summary: corr.summary,
-              recommendedAnnotation: {
-                group1: inputArgs.valueField,
-                group2: inputArgs.groupField,
-                pValue: corr.pValue,
-                stars: corr.stars
-              }
-            };
-          } else {
-            const ttest = runTwoGroupTtest(profile.records, inputArgs.valueField, inputArgs.groupField, inputArgs.group1Val, inputArgs.group2Val);
-            result = ttest;
-          }
-          break;
-        }
-
-        case 'set_publication_style': {
-          if (!currentState.spec) {
-            throw new Error('No active figure specification to format.');
-          }
-          const formattedSpec = {
-            ...currentState.spec,
-            themePreset: inputArgs.themePreset,
-            title: inputArgs.customTitle || currentState.spec.title,
-            subtitle: inputArgs.customSubtitle || `${currentState.spec.subtitle || ''} [Preset: ${String(inputArgs.themePreset).toUpperCase()}]`
-          };
-
-          const domainCmdResult = proposeFigureRevision(this.store, {
-            proposedSpec: formattedSpec,
-            basedOnRevision: currentState.currentRevision,
-            actor,
-            commandPayload: inputArgs
-          });
-
-          result = {
-            ...(domainCmdResult.result || domainCmdResult.boundaryErrors),
-            appliedPreset: inputArgs.themePreset,
-            themeSummary: `Proposed ${String(inputArgs.themePreset).toUpperCase()} journal typography and color palette.`
-          };
-          break;
-        }
-
-        case 'export_publication_figure': {
-          const profile = profileDataset(currentState.datasetId);
-          const spec = currentState.spec;
-          if (!spec) {
-            throw new Error('No active figure to export.');
-          }
-          const validation = validateFigureSpec(spec, profile);
-          const caption = `Figure 1. ${spec.title}. ${spec.subtitle || ''}. Data shown from dataset ${profile.title} (n=${profile.rowCount}). Figure generated with ${spec.themePreset ? spec.themePreset.toUpperCase() : 'standard'} layout rules. ${validation.valid ? 'Passed all scientific publication integrity checks.' : 'Validation warnings present.'}`;
-
-          result = {
-            datasetTitle: profile.title,
-            revision: currentState.currentRevision,
-            spec,
-            caption,
-            complianceScore: validation.valid ? 100 : 75,
-            guidelineChecks: validation.issues
-          };
-          break;
-        }
-
         default:
           throw new Error(
-            `Unknown WebMCP tool '${toolName}'. Registered tools: ${this.listTools().map(t => t.name).join(', ')}`
+            `Unknown WebMCP tool '${toolName}'. Registered tools: ${this.listTools().map((t) => t.name).join(', ')}`
           );
       }
     } catch (err: any) {
       status = 'error';
       result = {
-        error: err.message || 'Internal WebMCP tool execution error'
+        error: err.message || 'Internal WebMCP tool execution error',
       };
     }
 
@@ -252,7 +278,7 @@ export class WebMcpServer {
       result,
       durationMs,
       payloadBytes,
-      status
+      status,
     };
 
     return { result, log };

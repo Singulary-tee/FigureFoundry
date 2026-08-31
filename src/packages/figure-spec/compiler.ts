@@ -361,6 +361,14 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
   const shapeEnc = buildChannel(spec.encoding.shape);
   const sizeEnc = buildChannel(spec.encoding.size);
 
+  // Disable stacking if aggregate is non-summative
+  if (xEnc && xEnc.aggregate && !['sum', 'count'].includes(xEnc.aggregate)) {
+    xEnc.stack = null;
+  }
+  if (yEnc && yEnc.aggregate && !['sum', 'count'].includes(yEnc.aggregate)) {
+    yEnc.stack = null;
+  }
+
   // Apply filters if any
   let filteredRecords = profile.records;
   if (spec.filters && spec.filters.length > 0) {
@@ -432,7 +440,7 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
     }
 
     return {
-      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
       title: {
         text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
         subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${summaryMarkType}`
@@ -564,7 +572,7 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
     };
 
     return {
-      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
       title: {
         text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
         subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${spec.mark}${spec.themePreset ? ' • Style: ' + spec.themePreset.toUpperCase() : ''}`
@@ -583,7 +591,7 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
   }
 
   const specOut: Record<string, any> = {
-    $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+    $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
     title: {
       text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
       subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${spec.mark}${spec.themePreset ? ' • Style: ' + spec.themePreset.toUpperCase() : ''}`

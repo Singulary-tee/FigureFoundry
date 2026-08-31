@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FigureSpec, DatasetProfile, FigureIntent, MarkType } from '../types';
-import { Check, X, SlidersHorizontal, Axis3D, Palette, Sparkles, Layers } from 'lucide-react';
+import { Check, X, SlidersHorizontal, Axis3D, Palette, Layers } from 'lucide-react';
 
 interface EncodingPanelProps {
   currentSpec: FigureSpec;
@@ -188,7 +188,7 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
                 : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <Palette className="w-3.5 h-3.5" />
             <span>Style & Stats</span>
           </button>
 

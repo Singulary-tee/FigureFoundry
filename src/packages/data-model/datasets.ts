@@ -1,4 +1,3 @@
-
 const PENGUIN_RECORDS = [
   { species: 'Adelie', island: 'Torgersen', bill_length_mm: 39.1, bill_depth_mm: 18.7, flipper_length_mm: 181, body_mass_g: 3750, sex: 'male', year: 2007 },
   { species: 'Adelie', island: 'Torgersen', bill_length_mm: 39.5, bill_depth_mm: 17.4, flipper_length_mm: 186, body_mass_g: 3800, sex: 'female', year: 2007 },
@@ -42,6 +41,15 @@ export interface DatasetEntry {
   records: Record<string, any>[];
 }
 
+export interface DatasetRecord {
+  id: string;
+  name: string;
+  title?: string;
+  description: string;
+  citation?: string;
+  rows: Record<string, any>[];
+}
+
 export const DEMO_DATASETS: Record<string, DatasetEntry> = {
   'palmer-penguins': {
     id: 'palmer-penguins',
@@ -64,4 +72,31 @@ export const DEMO_DATASETS: Record<string, DatasetEntry> = {
     citation: 'NOAA Climate Data.',
     records: SEATTLE_WEATHER_RECORDS
   }
+};
+
+export const BUILTIN_DATASETS: Record<string, DatasetRecord> = {
+  'palmer-penguins': {
+    id: 'palmer-penguins',
+    name: 'Palmer Penguins Sample',
+    title: 'Palmer Penguins Sample',
+    description: 'Morphometric measurements for penguin species observed at Palmer Station, Antarctica.',
+    citation: 'Gorman KB, Williams TD, Fraser WR (2014) PLoS ONE.',
+    rows: PENGUIN_RECORDS,
+  },
+  'gapminder-life-expectancy': {
+    id: 'gapminder-life-expectancy',
+    name: 'Gapminder Indicators Sample',
+    title: 'Gapminder Indicators Sample',
+    description: 'Country-level indicators measuring life expectancy, population size, and GDP per capita.',
+    citation: 'Gapminder Foundation World Development Indicators.',
+    rows: GAPMINDER_RECORDS,
+  },
+  'seattle-weather': {
+    id: 'seattle-weather',
+    name: 'Seattle Weather Sample',
+    title: 'Seattle Weather Sample',
+    description: 'Daily precipitation, temperature, and wind speed recordings.',
+    citation: 'NOAA Climate Data.',
+    rows: SEATTLE_WEATHER_RECORDS,
+  },
 };

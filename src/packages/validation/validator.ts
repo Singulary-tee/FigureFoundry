@@ -142,3 +142,18 @@ export function validateFigureSpec(spec: FigureSpec, profile: DatasetProfile): V
     issues
   };
 }
+
+export function validateFile(content: string, filename: string): { valid: boolean; errors: string[] } {
+  if (!content || !content.trim()) {
+    return { valid: false, errors: ['File content is empty.'] };
+  }
+  if (filename.toLowerCase().endsWith('.json')) {
+    try {
+      JSON.parse(content);
+    } catch (e: any) {
+      return { valid: false, errors: ['Invalid JSON syntax: ' + e.message] };
+    }
+  }
+  return { valid: true, errors: [] };
+}
+

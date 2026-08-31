@@ -1,7 +1,7 @@
 ---
 name: linear-style-workbench
 description: >
-  Guidelines for designing high-density dark mode interfaces, precision SaaS toolbars, sub-pixel borders, and keyboard-first productivity workbenches (Linear, Raycast, Supabase style).
+  Guidelines for designing high-density dark mode interfaces, precision SaaS toolbars, sub-pixel borders, and keyboard-first productivity workbenches (Linear, Raycast style).
 ---
 
 # Linear-Style Workbench Design System

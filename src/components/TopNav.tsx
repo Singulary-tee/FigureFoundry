@@ -3,6 +3,7 @@ import { Database, History, ChevronDown, Sun, Moon, Cpu } from 'lucide-react';
 import { DEMO_DATASETS } from '../packages/data-model/datasets';
 import { getRegisteredDatasets } from '../packages/data-model/profiler';
 import { DatasetProfile, ExportBundle } from '../types';
+import { Button } from './ui/button';
 
 interface TopNavProps {
   activeDatasetId: string;
@@ -92,80 +93,82 @@ export const TopNav: React.FC<TopNavProps> = ({
             <span className="hidden sm:inline">Revision <span className="text-[#18181b] dark:text-[#EDEDED] font-medium ml-1.5">{currentRevision}</span></span>
           </div>
 
-          {/* Dataset & History buttons (desktop only - mobile uses bottom navigation bar) */}
-          <button
-            id="btn-open-dataset"
-            onClick={onOpenDatasetDrawer}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] min-h-[36px] leading-normal transition-colors cursor-pointer"
-            title="Inspect dataset schema, columns, and raw rows"
-          >
-            <Database className="w-3.5 h-3.5 text-[#71717a] dark:text-[#8C8C8C] shrink-0" />
-            <span>Dataset</span>
-          </button>
-
-          <button
+          <Button
             id="btn-open-provenance"
+            variant="outline"
+            size="sm"
             onClick={onOpenProvenanceDrawer}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] min-h-[36px] leading-normal transition-colors cursor-pointer"
+            className="hidden sm:inline-flex items-center gap-1.5 min-h-[36px] text-xs font-medium"
             title="View revision history and restore snapshots"
           >
             <History className="w-3.5 h-3.5 text-[#71717a] dark:text-[#8C8C8C] shrink-0" />
             <span>History</span>
-          </button>
+          </Button>
 
-          <button
+          <Button
             id="btn-export-bundle"
+            variant="outline"
+            size="sm"
             onClick={onExportProject}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] min-h-[36px] leading-normal transition-colors cursor-pointer"
+            className="hidden sm:inline-flex items-center gap-1.5 min-h-[36px] text-xs font-medium"
             title="Export full figure project bundle"
           >
             <span>Export Bundle</span>
-          </button>
+          </Button>
 
-          <label
-            id="lbl-import-bundle"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] min-h-[36px] leading-normal transition-colors cursor-pointer"
+          <Button
+            id="btn-import-bundle"
+            variant="outline"
+            size="sm"
+            asChild
+            className="hidden sm:inline-flex items-center gap-1.5 min-h-[36px] text-xs font-medium cursor-pointer"
           >
-            <span>Import Bundle</span>
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (event) => {
-                    try {
-                      const bundle = JSON.parse(event.target?.result as string);
-                      if (onImportProject) onImportProject(bundle);
-                    } catch (err) {
-                      console.error('Invalid JSON file format');
-                    }
-                  };
-                  reader.readAsText(file);
-                }
-              }}
-            />
-          </label>
+            <label className="cursor-pointer">
+              <span>Import Bundle</span>
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      try {
+                        const bundle = JSON.parse(event.target?.result as string);
+                        if (onImportProject) onImportProject(bundle);
+                      } catch (err) {
+                        console.error('Invalid JSON file format');
+                      }
+                    };
+                    reader.readAsText(file);
+                  }
+                }}
+              />
+            </label>
+          </Button>
 
           {/* WebMCP Dev Bench button (always visible top right) */}
-          <button
+          <Button
             id="btn-open-webmcp-dev"
+            variant="outline"
+            size="sm"
             onClick={onOpenWebMcpDevPanel}
-            className="inline-flex items-center justify-center px-2 sm:px-3 py-1.5 rounded-md text-xs font-semibold text-[#3ecf8e] bg-[#3ecf8e]/10 hover:bg-[#3ecf8e]/20 border border-[#3ecf8e]/30 min-h-[36px] leading-normal transition-colors cursor-pointer shrink-0"
+            className="inline-flex items-center justify-center px-2 sm:px-3 text-xs font-semibold text-[#3ecf8e] bg-[#3ecf8e]/10 hover:bg-[#3ecf8e]/20 border-[#3ecf8e]/30 min-h-[36px]"
             title="Open WebMCP Dev Testing Workbench & Agent Simulator"
           >
             <Cpu className="w-3.5 h-3.5 text-[#3ecf8e] shrink-0" />
             <span className="hidden sm:inline md:hidden ml-1.5">Dev Bench</span>
             <span className="hidden md:inline ml-1.5">WebMCP Dev Bench</span>
-          </button>
+          </Button>
 
           {/* Theme toggle button (always visible top right) */}
-          <button
+          <Button
             id="btn-toggle-theme"
+            variant="outline"
+            size="sm"
             onClick={onToggleTheme}
-            className="inline-flex items-center justify-center px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] min-h-[36px] leading-normal transition-colors cursor-pointer shrink-0"
+            className="inline-flex items-center justify-center px-2 sm:px-3 min-h-[36px]"
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
           >
             {theme === 'light' ? (
@@ -174,7 +177,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               <Moon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
             )}
             <span className="hidden sm:inline ml-1.5">{theme === 'light' ? 'Light' : 'Dark'}</span>
-          </button>
+          </Button>
         </div>
 
       </div>

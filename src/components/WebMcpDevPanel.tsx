@@ -6,7 +6,6 @@ import {
   Bot,
   Terminal,
   Code2,
-  Sparkles,
   Send,
   Play,
   Trash2,
@@ -600,8 +599,8 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
               {/* Presets Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-[#222] pb-2 shrink-0">
                 <div className="flex items-center gap-2 overflow-x-auto">
-                  <span className="text-xs font-medium text-[#737373] shrink-0 flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Quick Prompts:
+                  <span className="text-xs font-medium text-[#737373] shrink-0">
+                    Quick Prompts:
                   </span>
                   <button
                     onClick={() => handleRunPresetPrompt('Inspect dataset fields and summarize available quantitative vs categorical columns.')}

@@ -31,3 +31,29 @@ export function createProvenanceEvent(params: {
     commandPayload: params.commandPayload ? JSON.parse(JSON.stringify(params.commandPayload)) : undefined
   };
 }
+
+export interface ProvenanceLedger {
+  events: ProvenanceEvent[];
+}
+
+export function recordRevision(
+  ledger: ProvenanceLedger,
+  figure: any,
+  summary: string,
+  actor: 'agent' | 'human' = 'human'
+): ProvenanceLedger {
+  const currentEvents = ledger?.events || [];
+  const nextRev = currentEvents.length + 1;
+  const evt = createProvenanceEvent({
+    revision: nextRev,
+    actor,
+    actionType: actor === 'agent' ? 'PROPOSE_AND_APPLY' : 'DIRECT_HUMAN_EDIT',
+    summary,
+    basedOnRevision: Math.max(0, nextRev - 1),
+    specSnapshot: figure?.panels?.[0]?.spec || { title: 'Revision Snapshot', figureIntent: 'comparison', mark: 'bar', encoding: { x: { field: '', type: 'categorical' }, y: { field: '', type: 'quantitative' } }, showsRawObservations: false, uncertaintyEncoding: null },
+    validationReport: { valid: true, issues: [] },
+  });
+  return {
+    events: [evt, ...currentEvents],
+  };
+}

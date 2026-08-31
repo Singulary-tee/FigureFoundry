@@ -75,6 +75,7 @@ export interface ValidationIssue {
   path: string;
   message: string;
   rationale?: string;
+  nextAction?: string;
 }
 
 export interface ValidationReport {
