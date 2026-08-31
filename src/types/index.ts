@@ -119,6 +119,13 @@ export interface FigureState {
   userDatasets?: DatasetProfile[];
 }
 
+export type FigureProject = FigureState;
+
+export interface ExportBundle {
+  bundleVersion: "1.0";
+  project: FigureProject;
+}
+
 export interface WebMcpToolAnnotations {
   readOnlyHint?: boolean;
   destructiveHint?: boolean;

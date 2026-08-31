@@ -81,19 +81,28 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
     return registeredTools.find(t => t.name === selectedExecToolName) || registeredTools[0];
   }, [registeredTools, selectedExecToolName]);
 
+  // Interactive simulation states
+  const [activeSession, setActiveSession] = useState<{
+    history: any[];
+    pendingCalls: any[] | null;
+    turnCount: number;
+  } | null>(null);
+  const [autoExecute, setAutoExecute] = useState<boolean>(false);
+
   // Handle Preset Prompts
   const handleRunPresetPrompt = (promptText: string) => {
     setAgentPrompt(promptText);
     runAgentSimulation(promptText);
   };
 
-  // Agent Simulation Core Flow with Chaining Output Loop
+  // Agent Simulation Core Flow with Interactive Step Gate
   const runAgentSimulation = async (textToRun?: string) => {
     const prompt = textToRun || agentPrompt;
     if (!prompt.trim() || isAgentRunning) return;
 
     setIsAgentRunning(true);
     setAgentPrompt('');
+    setActiveSession(null); // Clear any active session
 
     const userEntryId = 'user_' + Date.now();
     setTimeline(prev => [
@@ -107,136 +116,94 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
     ]);
 
     const conversationHistory: any[] = [];
-    let currentPrompt: string | undefined = prompt;
-    let turnCount = 0;
-    const MAX_TURNS = 8;
+    await executeAgentTurn(prompt, conversationHistory, 1);
+  };
 
+  const executeAgentTurn = async (prompt: string | undefined, history: any[], turnCount: number) => {
     try {
-      while (turnCount < MAX_TURNS) {
-        turnCount++;
+      setIsAgentRunning(true);
 
-        // Call backend Gemini agent route
-        const response = await fetch('/api/webmcp/agent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: selectedModel,
-            prompt: currentPrompt,
-            tools: registeredTools,
-            history: conversationHistory,
-            context: {
-              datasetId: currentState.datasetId,
-              currentRevision: currentState.currentRevision
-            }
-          })
-        });
+      const response = await fetch('/api/webmcp/agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: selectedModel,
+          prompt: prompt,
+          tools: registeredTools,
+          history: history,
+          context: {
+            datasetId: currentState.datasetId,
+            currentRevision: currentState.currentRevision
+          }
+        })
+      });
 
-        if (currentPrompt) {
-          conversationHistory.push({ role: 'user', parts: [{ text: currentPrompt }] });
-          currentPrompt = undefined;
+      if (prompt) {
+        history.push({ role: 'user', parts: [{ text: prompt }] });
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `Server returned status ${response.status}`);
+      }
+
+      // Log thought if text returned
+      if (data.text) {
+        setTimeline(prev => [
+          ...prev,
+          {
+            id: 'thought_' + Date.now() + '_' + turnCount,
+            type: 'agent_thought',
+            content: data.text,
+            timestamp: Date.now()
+          }
+        ]);
+      }
+
+      // Add model response to history
+      const nextHistory = [...history];
+      if (data.candidateContent) {
+        nextHistory.push(data.candidateContent);
+      } else if (data.text || (data.functionCalls && data.functionCalls.length > 0)) {
+        const modelParts: any[] = [];
+        if (data.text) modelParts.push({ text: data.text });
+        if (data.functionCalls) {
+          data.functionCalls.forEach((fc: any) => {
+            modelParts.push({ functionCall: { name: fc.name, args: fc.args } });
+          });
         }
+        nextHistory.push({ role: 'model', parts: modelParts });
+      }
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || `Server returned status ${response.status}`);
+      if (data.functionCalls && data.functionCalls.length > 0) {
+        if (autoExecute) {
+          // Autonomous Auto-Execution
+          await commitToolCalls(data.functionCalls, nextHistory, turnCount);
+        } else {
+          // Interactive Approval Gate (Default)
+          setActiveSession({
+            history: nextHistory,
+            pendingCalls: data.functionCalls,
+            turnCount
+          });
+          setIsAgentRunning(false);
         }
-
-        // 1. Log Agent Thought if text returned
-        if (data.text) {
+      } else {
+        // Finished successfully without tool calls
+        if (!data.text) {
           setTimeline(prev => [
             ...prev,
             {
-              id: 'thought_' + Date.now() + '_' + turnCount,
-              type: 'agent_thought',
-              content: data.text,
+              id: 'no_op_' + Date.now(),
+              type: 'system',
+              content: 'Agent finished execution session.',
               timestamp: Date.now()
             }
           ]);
         }
-
-        // Append candidate content or construct model turn in conversation history
-        if (data.candidateContent) {
-          conversationHistory.push(data.candidateContent);
-        } else if (data.text || (data.functionCalls && data.functionCalls.length > 0)) {
-          const modelParts: any[] = [];
-          if (data.text) modelParts.push({ text: data.text });
-          if (data.functionCalls) {
-            data.functionCalls.forEach((fc: any) => {
-              modelParts.push({ functionCall: { name: fc.name, args: fc.args } });
-            });
-          }
-          conversationHistory.push({ role: 'model', parts: modelParts });
-        }
-
-        // 2. Process function calls returned by Gemini
-        if (data.functionCalls && data.functionCalls.length > 0) {
-          const toolResponseParts: any[] = [];
-
-          for (const fc of data.functionCalls) {
-            const callId = 'call_' + Math.random().toString(36).substring(2, 7);
-            
-            setTimeline(prev => [
-              ...prev,
-              {
-                id: callId,
-                type: 'tool_call',
-                toolName: fc.name,
-                args: fc.args,
-                timestamp: Date.now()
-              }
-            ]);
-
-            // Execute tool through local WebMCP server (Invariant parity)
-            const startTime = performance.now();
-            const execution = await executeTool(fc.name, fc.args, 'agent');
-            const durationMs = Math.round(performance.now() - startTime);
-
-            setTimeline(prev => [
-              ...prev,
-              {
-                id: 'res_' + callId,
-                type: 'tool_result',
-                toolName: fc.name,
-                result: execution.result,
-                status: execution.log.status,
-                durationMs,
-                timestamp: Date.now()
-              }
-            ]);
-
-            toolResponseParts.push({
-              functionResponse: {
-                name: fc.name,
-                response: typeof execution.result === 'object' && execution.result !== null
-                  ? execution.result
-                  : { result: execution.result }
-              }
-            });
-          }
-
-          // Push tool execution results to history for output chaining
-          conversationHistory.push({
-            role: 'user',
-            parts: toolResponseParts
-          });
-
-          // Continue loop for multi-turn output chaining
-          continue;
-        } else {
-          if (!data.text) {
-            setTimeline(prev => [
-              ...prev,
-              {
-                id: 'no_op_' + Date.now(),
-                type: 'system',
-                content: 'Agent responded without tool calls or text.',
-                timestamp: Date.now()
-              }
-            ]);
-          }
-          break;
-        }
+        setActiveSession(null);
+        setIsAgentRunning(false);
       }
     } catch (err: any) {
       setTimeline(prev => [
@@ -248,9 +215,115 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
           timestamp: Date.now()
         }
       ]);
-    } finally {
+      setActiveSession(null);
       setIsAgentRunning(false);
     }
+  };
+
+  const commitToolCalls = async (calls: any[], history: any[], turnCount: number) => {
+    setIsAgentRunning(true);
+    const toolResponseParts: any[] = [];
+
+    try {
+      for (const fc of calls) {
+        const callId = 'call_' + Math.random().toString(36).substring(2, 7);
+
+        setTimeline(prev => [
+          ...prev,
+          {
+            id: callId,
+            type: 'tool_call',
+            toolName: fc.name,
+            args: fc.args,
+            timestamp: Date.now()
+          }
+        ]);
+
+        const startTime = performance.now();
+        const execution = await executeTool(fc.name, fc.args, 'agent');
+        const durationMs = Math.round(performance.now() - startTime);
+
+        setTimeline(prev => [
+          ...prev,
+          {
+            id: 'res_' + callId,
+            type: 'tool_result',
+            toolName: fc.name,
+            result: execution.result,
+            status: execution.log.status,
+            durationMs,
+            timestamp: Date.now()
+          }
+        ]);
+
+        toolResponseParts.push({
+          functionResponse: {
+            name: fc.name,
+            response: typeof execution.result === 'object' && execution.result !== null
+              ? execution.result
+              : { result: execution.result }
+          }
+        });
+      }
+
+      const nextHistory = [
+        ...history,
+        {
+          role: 'user',
+          parts: toolResponseParts
+        }
+      ];
+
+      const MAX_TURNS = 8;
+      if (turnCount < MAX_TURNS) {
+        // Call backend for the next step of the agent's chain
+        await executeAgentTurn(undefined, nextHistory, turnCount + 1);
+      } else {
+        setTimeline(prev => [
+          ...prev,
+          {
+            id: 'max_turns_' + Date.now(),
+            type: 'system',
+            content: `Reached limit of ${MAX_TURNS} simulation turns.`,
+            timestamp: Date.now()
+          }
+        ]);
+        setActiveSession(null);
+        setIsAgentRunning(false);
+      }
+    } catch (err: any) {
+      setTimeline(prev => [
+        ...prev,
+        {
+          id: 'err_tools_' + Date.now(),
+          type: 'system',
+          content: `Tool Execution Error: ${err.message || err}`,
+          timestamp: Date.now()
+        }
+      ]);
+      setActiveSession(null);
+      setIsAgentRunning(false);
+    }
+  };
+
+  const handleApprovePendingCalls = async () => {
+    if (!activeSession || !activeSession.pendingCalls) return;
+    const { history, pendingCalls, turnCount } = activeSession;
+    setActiveSession(null);
+    await commitToolCalls(pendingCalls, history, turnCount);
+  };
+
+  const handleDeclinePendingCalls = () => {
+    setTimeline(prev => [
+      ...prev,
+      {
+        id: 'decline_' + Date.now(),
+        type: 'system',
+        content: 'Human user declined agent proposed tool calls. Session ended.',
+        timestamp: Date.now()
+      }
+    ]);
+    setActiveSession(null);
   };
 
   // Populate sample parameters for Manual Executor
@@ -525,41 +598,56 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
             <div className="h-full flex flex-col p-3 sm:p-4 gap-3 overflow-hidden">
               
               {/* Presets Bar */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 shrink-0">
-                <span className="text-xs font-medium text-[#737373] shrink-0 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Quick Prompts:
-                </span>
-                <button
-                  onClick={() => handleRunPresetPrompt('Inspect dataset fields and summarize available quantitative vs categorical columns.')}
-                  disabled={isAgentRunning}
-                  className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-[#EDEDED] shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  Inspect Fields
-                </button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-[#222] pb-2 shrink-0">
+                <div className="flex items-center gap-2 overflow-x-auto">
+                  <span className="text-xs font-medium text-[#737373] shrink-0 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Quick Prompts:
+                  </span>
+                  <button
+                    onClick={() => handleRunPresetPrompt('Inspect dataset fields and summarize available quantitative vs categorical columns.')}
+                    disabled={isAgentRunning}
+                    className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-[#EDEDED] shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Inspect Fields
+                  </button>
 
-                <button
-                  onClick={() => handleRunPresetPrompt('Propose a scatter plot relationship figure for bill_length_mm vs bill_depth_mm colored by species.')}
-                  disabled={isAgentRunning}
-                  className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-[#3ecf8e] shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  Propose Revision
-                </button>
+                  <button
+                    onClick={() => handleRunPresetPrompt('Propose a scatter plot relationship figure for bill_length_mm vs bill_depth_mm colored by species.')}
+                    disabled={isAgentRunning}
+                    className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-[#3ecf8e] shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Propose Revision
+                  </button>
 
-                <button
-                  onClick={() => handleRunPresetPrompt('Run a Welch two-sample t-test comparing bill_length_mm across male vs female groups.')}
-                  disabled={isAgentRunning}
-                  className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-amber-300 shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  Run Statistical Test
-                </button>
+                  <button
+                    onClick={() => handleRunPresetPrompt('Run a Welch two-sample t-test comparing bill_length_mm across male vs female groups.')}
+                    disabled={isAgentRunning}
+                    className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-amber-300 shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Run Statistical Test
+                  </button>
 
-                <button
-                  onClick={() => handleRunPresetPrompt('Apply the Nature journal publication theme style with custom title.')}
-                  disabled={isAgentRunning}
-                  className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-sky-300 shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  Set Nature Style
-                </button>
+                  <button
+                    onClick={() => handleRunPresetPrompt('Apply the Nature journal publication theme style with custom title.')}
+                    disabled={isAgentRunning}
+                    className="px-2.5 py-1 rounded-md text-xs bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] hover:border-[#383838] text-sky-300 shrink-0 min-h-[34px] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Set Nature Style
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#1a1a1a] border border-[#2e2e2e] self-start sm:self-auto shrink-0 select-none">
+                  <input
+                    type="checkbox"
+                    id="auto-execute-toggle"
+                    checked={autoExecute}
+                    onChange={e => setAutoExecute(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-[#3ecf8e] rounded border-[#383838] bg-black text-[#3ecf8e] cursor-pointer"
+                  />
+                  <label htmlFor="auto-execute-toggle" className="text-[11px] text-[#A1A1A1] font-semibold cursor-pointer">
+                    Auto-Chain Turns
+                  </label>
+                </div>
               </div>
 
               {/* Timeline Output Feed */}
@@ -663,6 +751,55 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
                   </div>
                 )}
               </div>
+
+              {activeSession && activeSession.pendingCalls && (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col gap-3 text-amber-300 animate-fadeIn shrink-0">
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-semibold text-white tracking-tight">
+                        Agent is Requesting Permission to Run Tool{activeSession.pendingCalls.length > 1 ? 's' : ''}
+                      </h4>
+                      <p className="text-xs text-amber-400/90 mt-0.5">
+                        Every agent tool execution requires researcher authorization. Please review the proposed actions below:
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-[140px] overflow-y-auto pr-1">
+                    {activeSession.pendingCalls.map((fc: any, idx: number) => (
+                      <div key={idx} className="bg-black/45 border border-amber-500/20 rounded-lg p-2.5 font-mono text-xs text-[#EDEDED]">
+                        <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+                          <span className="text-[10px] text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded font-bold font-sans">PROPOSED</span>
+                          <span>{fc.name}</span>
+                        </div>
+                        <pre className="text-[11px] text-[#A1A1A1] mt-1.5 bg-[#121212]/50 p-1.5 rounded overflow-x-auto max-h-24">
+                          {JSON.stringify(fc.args, null, 2)}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2.5 mt-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleApprovePendingCalls}
+                      className="flex-1 min-h-[38px] px-4 py-2 rounded-lg bg-[#3ecf8e] text-black font-semibold text-xs hover:bg-[#34b27b] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-black" />
+                      <span>Approve & Execute</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeclinePendingCalls}
+                      className="min-h-[38px] px-4 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#383838] border border-[#3e3e3e] text-white font-medium text-xs transition-all cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <X className="w-4 h-4 text-[#888]" />
+                      <span>Decline</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Prompt Input Form */}
               <form

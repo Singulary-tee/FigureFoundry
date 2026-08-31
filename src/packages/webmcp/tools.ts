@@ -45,6 +45,59 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     }
   },
   {
+    name: 'inspect_figure_workspace',
+    title: 'Inspect current figure workspace state',
+    description: 'Returns the current session state: scientific question, declared figure intent, revision number, the currently applied figure spec (if any), the most recent validation result, and a count of provenance events. Read-only. Does NOT return dataset field metadata — call inspect_dataset_fields separately for that. Call this first in a session, or after apply_figure_revision, to know what is currently on screen before proposing a change.',
+    annotations: {
+      readOnlyHint: true,
+      untrustedContentHint: false
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        datasetId: { type: 'string', const: 'palmer-penguins' },
+        scientificQuestion: { type: 'string' },
+        figureIntent: {
+          type: 'string',
+          enum: ['comparison', 'distribution', 'relationship', 'trend']
+        },
+        revision: { type: 'integer', minimum: 0 },
+        currentSpec: {
+          type: ['object', 'null'],
+          description: 'The FigureSpec currently applied, or null if no revision has been applied yet this session.'
+        },
+        lastValidation: {
+          type: ['object', 'null'],
+          properties: {
+            valid: { type: 'boolean' },
+            issues: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  severity: { type: 'string', enum: ['blocking', 'warning'] },
+                  path: { type: 'string' },
+                  message: { type: 'string' }
+                },
+                required: ['severity', 'path', 'message'],
+                additionalProperties: false
+              }
+            }
+          },
+          additionalProperties: false
+        },
+        provenanceEventCount: { type: 'integer', minimum: 0 }
+      },
+      required: ['datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
+      additionalProperties: false
+    }
+  },
+  {
     name: 'inspect_figure_state',
     title: 'Inspect current figure state',
     description: 'Returns the current active datasetId, currentRevision, canonical FigureSpec, active staging preview (if any), and recent provenance events. Read-only.',

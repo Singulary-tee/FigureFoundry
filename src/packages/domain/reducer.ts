@@ -89,14 +89,14 @@ export function figureReducer(state: FigureState, action: FigureDomainAction): {
 
       const initialSpec = customSpec || generateInitialSpecForProfile(profile);
       const validation = validateFigureSpec(initialSpec, profile);
-      const newRevision = state.currentRevision + 1;
+      const newRevision = 1; // Reset to revision 1 for a brand new dataset session
 
       const event = createProvenanceEvent({
         revision: newRevision,
         actor: 'human',
         actionType: 'IMPORT_DATASET',
         summary: `Imported dataset '${profile.title}' (${profile.rowCount} rows, ${profile.fields.length} cols)`,
-        basedOnRevision: state.currentRevision,
+        basedOnRevision: 0,
         specSnapshot: initialSpec,
         validationReport: validation,
         diffDescription: [`Imported dataset ${profile.title} and compiled dynamic figure`]
@@ -115,8 +115,8 @@ export function figureReducer(state: FigureState, action: FigureDomainAction): {
           currentRevision: newRevision,
           spec: initialSpec,
           activePreview: null,
-          provenanceLedger: [event, ...state.provenanceLedger],
-          undoStack: state.spec ? [state.spec, ...state.undoStack] : [],
+          provenanceLedger: [event], // Reset history for the new dataset
+          undoStack: [], // Start clean for the new dataset
           redoStack: [],
           userDatasets: updatedUserDatasets
         },
@@ -138,7 +138,7 @@ export function figureReducer(state: FigureState, action: FigureDomainAction): {
       }
 
       const adaptedSpec = generateInitialSpecForProfile(profile, state.spec?.theme || 'dark');
-      const newRevision = state.currentRevision + 1;
+      const newRevision = 1; // Reset to revision 1 for a brand new dataset session
       const validation = validateFigureSpec(adaptedSpec, profile);
 
       const event = createProvenanceEvent({
@@ -146,7 +146,7 @@ export function figureReducer(state: FigureState, action: FigureDomainAction): {
         actor: 'human',
         actionType: 'LOAD_DATASET',
         summary: `Loaded dataset '${profile.title}'`,
-        basedOnRevision: state.currentRevision,
+        basedOnRevision: 0,
         specSnapshot: adaptedSpec,
         validationReport: validation,
         diffDescription: [`Dataset switched to ${profile.title}`]
@@ -159,8 +159,8 @@ export function figureReducer(state: FigureState, action: FigureDomainAction): {
           currentRevision: newRevision,
           spec: adaptedSpec,
           activePreview: null,
-          provenanceLedger: [event, ...state.provenanceLedger],
-          undoStack: state.spec ? [state.spec, ...state.undoStack] : [],
+          provenanceLedger: [event], // Reset history for the new dataset
+          undoStack: [], // Start clean for the new dataset
           redoStack: []
         },
         result: {

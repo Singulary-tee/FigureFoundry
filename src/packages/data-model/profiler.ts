@@ -27,7 +27,7 @@ export function profileDataset(
     return {
       datasetId: '',
       title: 'No Dataset Loaded',
-      description: 'Upload a CSV or JSON file to begin constructing scientific figures.',
+      description: 'Import a CSV or JSON file in the Dataset panel to begin constructing scientific figures.',
       citation: '',
       rowCount: 0,
       fields: [],

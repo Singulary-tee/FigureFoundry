@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useCallback, useSyncExternalStore } from 'react';
 import { INITIAL_FIGURE_STATE } from './packages/domain/state';
 import { FigureDomainAction } from './packages/domain/reducer';
-import { globalFigureStore } from './packages/domain/store';
+import { globalFigureStore, exportBundle, importBundle } from './packages/domain/store';
 import { profileDataset } from './packages/data-model/profiler';
 import { WebMcpProvider } from './packages/webmcp';
-import { FigureSpec } from './types';
+import { FigureSpec, ExportBundle } from './types';
 import { TopNav } from './components/TopNav';
 import { EncodingPanel } from './components/EncodingPanel';
 import { VegaFigureView } from './packages/renderer-vega/VegaFigureView';
@@ -31,7 +31,7 @@ function MainWorkbench({
   const [isDatasetDrawerOpen, setIsDatasetDrawerOpen] = useState(false);
   const [isProvenanceDrawerOpen, setIsProvenanceDrawerOpen] = useState(false);
   const [isWebMcpDevPanelOpen, setIsWebMcpDevPanelOpen] = useState(false);
-  const [mobileActiveTab, setMobileActiveTab] = useState<'canvas' | 'encodings'>('canvas');
+  const [mobileActiveTab, setMobileActiveTab] = useState<'canvas' | 'encodings' | 'dataset' | 'history'>('canvas');
 
   const handleProposeDirectEdit = (newSpec: FigureSpec) => {
     dispatch({
@@ -100,12 +100,17 @@ function MainWorkbench({
     setIsDatasetDrawerOpen(false);
   };
 
-  const handleRestoreRevision = (targetRevision: number) => {
-    dispatch({
-      type: 'RESTORE_SNAPSHOT',
-      payload: { targetRevision }
-    });
-    setIsProvenanceDrawerOpen(false);
+  const handleExportProject = () => {
+    exportBundle(state);
+  };
+
+  const handleImportProject = (bundle: ExportBundle) => {
+    try {
+      const imported = importBundle(bundle);
+      globalFigureStore.importState(imported);
+    } catch (err: any) {
+      console.error('Import failed:', err.message);
+    }
   };
 
   return (
@@ -122,6 +127,8 @@ function MainWorkbench({
         onOpenDatasetDrawer={() => setIsDatasetDrawerOpen(true)}
         onOpenProvenanceDrawer={() => setIsProvenanceDrawerOpen(true)}
         onOpenWebMcpDevPanel={() => setIsWebMcpDevPanelOpen(true)}
+        onExportProject={handleExportProject}
+        onImportProject={handleImportProject}
       />
 
       <main className="flex-1 flex flex-row overflow-hidden relative min-h-0">
@@ -136,6 +143,32 @@ function MainWorkbench({
             onCloseMobileModal={() => setMobileActiveTab('canvas')}
           />
         </div>
+
+        {mobileActiveTab === 'dataset' && (
+          <div className="absolute inset-0 z-20 bg-white dark:bg-[#171717] md:hidden flex flex-col h-full min-h-0">
+            <DatasetDrawer
+              isOpen={true}
+              onClose={() => setMobileActiveTab('canvas')}
+              profile={profile}
+              onImportDataset={handleImportDataset}
+              onClearDataset={handleClearDataset}
+              isInline={true}
+            />
+          </div>
+        )}
+
+        {mobileActiveTab === 'history' && (
+          <div className="absolute inset-0 z-20 bg-white dark:bg-[#171717] md:hidden flex flex-col h-full min-h-0">
+            <ProvenanceDrawer
+              isOpen={true}
+              onClose={() => setMobileActiveTab('canvas')}
+              provenanceLedger={state.provenanceLedger}
+              currentRevision={state.currentRevision}
+              onRestoreRevision={(rev) => dispatch({ type: 'RESTORE_SNAPSHOT', payload: { targetRevision: rev } })}
+              isInline={true}
+            />
+          </div>
+        )}
 
         <section className={`flex-1 p-3 sm:p-4 md:p-5 flex flex-col overflow-y-auto bg-[#f8f9fa] dark:bg-[#121212] min-h-0 ${mobileActiveTab === 'canvas' ? 'flex' : 'hidden md:flex'}`}>
           
@@ -166,7 +199,7 @@ function MainWorkbench({
             mobileActiveTab === 'canvas' ? 'text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 font-semibold' : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
           }`}
         >
-          <BarChart3 className="w-4 h-4 text-[#24b47e] dark:text-[#3ecf8e] shrink-0" />
+          <BarChart3 className="w-4 h-4 shrink-0" />
           <span>Figure</span>
         </button>
 
@@ -181,16 +214,20 @@ function MainWorkbench({
         </button>
 
         <button
-          onClick={() => setIsDatasetDrawerOpen(true)}
-          className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED] transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer"
+          onClick={() => setMobileActiveTab('dataset')}
+          className={`flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer ${
+            mobileActiveTab === 'dataset' ? 'text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 font-semibold' : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
+          }`}
         >
           <Database className="w-4 h-4 shrink-0" />
           <span>Dataset</span>
         </button>
 
         <button
-          onClick={() => setIsProvenanceDrawerOpen(true)}
-          className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED] transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer"
+          onClick={() => setMobileActiveTab('history')}
+          className={`flex flex-col items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[44px] min-w-[70px] leading-normal cursor-pointer ${
+            mobileActiveTab === 'history' ? 'text-[#24b47e] dark:text-[#3ecf8e] bg-[#3ecf8e]/10 font-semibold' : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
+          }`}
         >
           <History className="w-4 h-4 shrink-0" />
           <span>History</span>
@@ -210,7 +247,7 @@ function MainWorkbench({
         onClose={() => setIsProvenanceDrawerOpen(false)}
         provenanceLedger={state.provenanceLedger}
         currentRevision={state.currentRevision}
-        onRestoreRevision={handleRestoreRevision}
+        onRestoreRevision={(rev) => dispatch({ type: 'RESTORE_SNAPSHOT', payload: { targetRevision: rev } })}
       />
 
       <WebMcpDevPanel

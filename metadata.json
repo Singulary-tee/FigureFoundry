@@ -1,6 +1,6 @@
 {
   "name": "FigureFoundry",
   "description": "Scientific figure editor with Vega-Lite compilation, dataset inspection, and reproducible figure provenance.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["tools"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

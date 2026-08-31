@@ -57,6 +57,36 @@ export class WebMcpServer {
           break;
         }
 
+        case 'inspect_figure_workspace': {
+          const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
+          const lastValidation = currentState.spec ? validateFigureSpec(currentState.spec, profile) : null;
+
+          let scientificQuestion = 'How do morphometric measurements (bill length, depth, flipper length, body mass) differ across penguin species and sexes?';
+          if (currentState.datasetId === 'gapminder-life-expectancy') {
+            scientificQuestion = 'What is the relationship between GDP per capita and life expectancy across different countries and continents?';
+          } else if (currentState.datasetId === 'seattle-weather') {
+            scientificQuestion = 'What are the trends and relationships in precipitation, maximum temperature, and wind speed in Seattle weather over time?';
+          }
+
+          result = {
+            datasetId: currentState.datasetId || 'palmer-penguins',
+            scientificQuestion,
+            figureIntent: currentState.spec?.figureIntent || 'comparison',
+            revision: currentState.currentRevision,
+            currentSpec: currentState.spec,
+            lastValidation: lastValidation ? {
+              valid: lastValidation.valid,
+              issues: lastValidation.issues.map(issue => ({
+                severity: issue.severity,
+                path: issue.path,
+                message: issue.message
+              }))
+            } : null,
+            provenanceEventCount: currentState.provenanceLedger.length
+          };
+          break;
+        }
+
         case 'inspect_figure_state': {
           result = {
             datasetId: currentState.datasetId,

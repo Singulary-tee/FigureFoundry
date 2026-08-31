@@ -1,6 +1,6 @@
 # WebMCP Tool Contracts
 
-FigureFoundry implements three primary WebMCP tools tailored for LLM consumption, bounded context budgets, and deterministic verification.
+FigureFoundry implements four primary WebMCP tools tailored for LLM consumption, bounded context budgets, and deterministic verification.
 
 ---
 
@@ -63,7 +63,70 @@ FigureFoundry implements three primary WebMCP tools tailored for LLM consumption
 
 ---
 
-## 2. `propose_figure_revision`
+## 2. `inspect_figure_workspace`
+
+**Description:** Returns the current session state: scientific question, declared figure intent, revision number, the currently applied figure spec (if any), the most recent validation result, and a count of provenance events. Read-only. Does NOT return dataset field metadata — call inspect_dataset_fields separately for that. Call this first in a session, or after apply_figure_revision, to know what is currently on screen before proposing a change.
+
+### Schema Definition
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "inspect_figure_workspace",
+  "title": "Inspect current figure workspace state",
+  "annotations": {
+    "readOnlyHint": true,
+    "untrustedContentHint": false
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "datasetId": { "type": "string", "const": "palmer-penguins" },
+      "scientificQuestion": { "type": "string" },
+      "figureIntent": {
+        "type": "string",
+        "enum": ["comparison", "distribution", "relationship", "trend"]
+      },
+      "revision": { "type": "integer", "minimum": 0 },
+      "currentSpec": {
+        "type": ["object", "null"],
+        "description": "The FigureSpec currently applied, or null if no revision has been applied yet this session."
+      },
+      "lastValidation": {
+        "type": ["object", "null"],
+        "properties": {
+          "valid": { "type": "boolean" },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": { "type": "string", "enum": ["blocking", "warning"] },
+                "path": { "type": "string" },
+                "message": { "type": "string" }
+              },
+              "required": ["severity", "path", "message"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "provenanceEventCount": { "type": "integer", "minimum": 0 }
+    },
+    "required": ["datasetId", "scientificQuestion", "figureIntent", "revision", "currentSpec", "lastValidation", "provenanceEventCount"],
+    "additionalProperties": false
+  }
+}
+```
+
+---
+
+## 3. `propose_figure_revision`
 
 **Description:** Proposes a candidate figure revision based on visual intent, marks, channel encodings, and uncertainty parameters. Returns a transient `previewId`, validation issues, and next-action instructions.
 
@@ -157,7 +220,7 @@ FigureFoundry implements three primary WebMCP tools tailored for LLM consumption
 
 ---
 
-## 3. `apply_figure_revision`
+## 4. `apply_figure_revision`
 
 **Description:** Commits a previously proposed figure revision after human UI review and approval. Enforces optimistic concurrency and UI approval checks.
 

@@ -37,13 +37,24 @@ export class WebMcpPolyfillContainer implements BrowserModelContext {
   }
 }
 
-function isNativeToolsPolicyAllowed(): boolean {
-  if (typeof document === 'undefined') return false;
+export function isNativeToolsPolicyAllowed(): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+
+  // If we are in an iframe (which is always the case in the AI Studio preview),
+  // native "tools" feature is disallowed and querying it or accessing document.modelContext
+  // will log a Permissions Policy disallowed error.
+  try {
+    if (window.self !== window.top) {
+      return false;
+    }
+  } catch (e) {
+    // Cross-origin exception means we are definitely in an iframe
+    return false;
+  }
 
   try {
     const policy = (document as any).permissionsPolicy || (document as any).featurePolicy;
     if (policy && typeof policy.allowsFeature === 'function') {
-      
       return policy.allowsFeature('tools');
     }
   } catch (e) {
@@ -57,6 +68,19 @@ export function initWebMcpPolyfill(): {
   modelContext: BrowserModelContext;
   isNative: boolean;
 } {
+  if (typeof document !== 'undefined' && isNativeToolsPolicyAllowed()) {
+    try {
+      if (typeof (document as any).modelContext !== 'undefined') {
+        return {
+          modelContext: (document as any).modelContext,
+          isNative: true
+        };
+      }
+    } catch (e) {
+      console.warn("Native modelContext check threw an error, falling back:", e);
+    }
+  }
+
   const container = new WebMcpPolyfillContainer();
 
   if (typeof window === 'undefined') {

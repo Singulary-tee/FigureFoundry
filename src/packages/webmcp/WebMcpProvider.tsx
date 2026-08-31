@@ -3,7 +3,7 @@ import { WebMcpToolDefinition, WebMcpCallLog, FigureState } from '../../types';
 import { FigureDomainAction } from '../domain/reducer';
 import { WebMcpServer } from './server';
 import { getDatasetAwareTools, BASE_WEBMCP_TOOLS } from './tools';
-import { initWebMcpPolyfill } from './polyfill';
+import { initWebMcpPolyfill, isNativeToolsPolicyAllowed } from './polyfill';
 import { setupPostMessageTransport } from './transport';
 import { WebMcpContextValue, WebMcpExecutionState } from './types';
 
@@ -142,7 +142,28 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
   useEffect(() => {
     if (!autoRegisterBrowser) return;
 
-    const { modelContext, isNative } = initWebMcpPolyfill();
+    let modelContext: any = null;
+    let isNative = false;
+
+    // Feature detect native document.modelContext first as per Defect 5 requirement.
+    // Native must always win when both are available.
+    try {
+      if (typeof document !== 'undefined' && isNativeToolsPolicyAllowed() && typeof (document as any).modelContext !== 'undefined') {
+        modelContext = (document as any).modelContext;
+        isNative = true;
+      }
+    } catch (e) {
+      console.warn("Native modelContext detection threw an error, falling back:", e);
+      modelContext = null;
+      isNative = false;
+    }
+
+    if (!modelContext) {
+      // Fallback path to polyfill.ts if the native API is absent or blocked.
+      const poly = initWebMcpPolyfill();
+      modelContext = poly.modelContext;
+      isNative = poly.isNative;
+    }
     setIsNativeSupported(isNative);
 
     if (modelContext?.registerTool) {

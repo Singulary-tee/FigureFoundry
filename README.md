@@ -43,5 +43,5 @@ FigureFoundry bridges the gap between AI generation and scientific rigor. Instea
 
 ## Tech Stack
 - **Core**: React 19, TypeScript 5.8, Tailwind CSS v4, Motion
-- **Visualization**: Vega 5, Vega-Lite 5, Vega-Embed
+- **Visualization**: Vega 6, Vega-Lite 6, Vega-Embed
 - **Tool Protocol**: WebMCP in-browser semantic contract architecture

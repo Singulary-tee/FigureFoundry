@@ -380,14 +380,24 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
   // Distribution with Raw Observation Points (Jitter Boxplot / Beeswarm)
   if (spec.figureIntent === 'distribution' && spec.showsRawObservations) {
     const layers: any[] = [];
+    const summaryMarkType = spec.mark || 'boxplot';
 
     layers.push({
       mark: {
-        type: 'boxplot',
-        extent: 'min-max',
-        opacity: isPreview ? 0.85 : 0.75,
-        ticks: true,
-        median: { color: '#111827', size: 2 }
+        type: summaryMarkType,
+        ...(summaryMarkType === 'boxplot' && {
+          extent: 'min-max',
+          ticks: true,
+          median: { color: '#111827', size: 2 }
+        }),
+        ...(summaryMarkType === 'bar' && {
+          cornerRadiusTop: 3
+        }),
+        ...(summaryMarkType === 'line' && {
+          strokeWidth: 2.5,
+          point: true
+        }),
+        opacity: isPreview ? 0.85 : 0.75
       },
       encoding: {
         x: xEnc,
@@ -396,34 +406,36 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
       }
     });
 
-    layers.push({
-      transform: [
-        {
-          calculate: 'random() * 0.4 - 0.2',
-          as: 'jitter_offset'
+    if (summaryMarkType !== 'point' && summaryMarkType !== 'tick') {
+      layers.push({
+        transform: [
+          {
+            calculate: 'random() * 0.4 - 0.2',
+            as: 'jitter_offset'
+          }
+        ],
+        mark: {
+          type: 'point',
+          filled: true,
+          size: 38,
+          opacity: isPreview ? 0.9 : 0.65,
+          tooltip: { content: 'data' }
+        },
+        encoding: {
+          x: xEnc,
+          y: yEnc,
+          xOffset: { field: 'jitter_offset', type: 'quantitative' },
+          ...(colorEnc && { color: colorEnc }),
+          ...(shapeEnc && { shape: shapeEnc })
         }
-      ],
-      mark: {
-        type: 'point',
-        filled: true,
-        size: 38,
-        opacity: isPreview ? 0.9 : 0.65,
-        tooltip: { content: 'data' }
-      },
-      encoding: {
-        x: xEnc,
-        y: yEnc,
-        xOffset: { field: 'jitter_offset', type: 'quantitative' },
-        ...(colorEnc && { color: colorEnc }),
-        ...(shapeEnc && { shape: shapeEnc })
-      }
-    });
+      });
+    }
 
     return {
       $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
       title: {
         text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
-        subtitle: spec.subtitle || `Intent: ${spec.figureIntent} (with raw observation points)`
+        subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${summaryMarkType}`
       },
       data: { values: filteredRecords },
       layer: layers,
@@ -542,6 +554,34 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
     });
   }
 
+  if (spec.facetBy) {
+    const innerSpec: Record<string, any> = {
+      layer: layers.length === 1 ? undefined : layers,
+      mark: layers.length === 1 ? markConfig : undefined,
+      encoding: layers.length === 1 ? mainEnc : undefined,
+      width: 180,
+      height: 280
+    };
+
+    return {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      title: {
+        text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
+        subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${spec.mark}${spec.themePreset ? ' • Style: ' + spec.themePreset.toUpperCase() : ''}`
+      },
+      data: { values: filteredRecords },
+      facet: {
+        column: {
+          field: spec.facetBy.field,
+          type: toVegaType(spec.facetBy.type),
+          title: spec.facetBy.field
+        }
+      },
+      spec: innerSpec,
+      config: baseConfig
+    };
+  }
+
   const specOut: Record<string, any> = {
     $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
     title: {
@@ -557,17 +597,6 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
     height: 380,
     autosize: { type: 'fit', contains: 'padding', resize: true }
   };
-
-  // Facet support
-  if (spec.facetBy) {
-    specOut.facet = {
-      column: {
-        field: spec.facetBy.field,
-        type: toVegaType(spec.facetBy.type),
-        title: spec.facetBy.field
-      }
-    };
-  }
 
   return specOut;
 }

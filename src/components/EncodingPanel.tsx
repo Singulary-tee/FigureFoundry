@@ -36,7 +36,7 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
       >
         <p className="text-xs font-medium text-[#18181b] dark:text-[#EDEDED]">No Dataset Active</p>
         <p className="text-xs text-[#71717a] dark:text-[#737373] max-w-xs">
-          Upload a dataset to unlock figure controls and encoding channels.
+          Import a dataset in the Dataset panel to unlock figure controls and encoding channels.
         </p>
       </aside>
     );
@@ -140,15 +140,7 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
             Figure Controls
           </h2>
 
-          {isMobileModal && (
-            <button
-              onClick={onCloseMobileModal}
-              className="p-1.5 rounded-md bg-[#f4f4f5] dark:bg-[#1f1f1f] border border-[#e4e4e7] dark:border-[#2e2e2e] text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED] flex items-center justify-center transition-colors min-h-[36px] min-w-[36px]"
-              aria-label="Close Settings"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto p-1 bg-[#f4f4f5] dark:bg-[#121212] rounded-lg border border-[#e4e4e7] dark:border-[#262626] scrollbar-none">
@@ -546,7 +538,7 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
         )}
       </div>
 
-      <div className="p-3 sm:p-4 border-t border-[#e4e4e7] dark:border-[#262626] bg-white dark:bg-[#171717] flex flex-col gap-2 shrink-0 z-10 shadow-lg">
+      <div className="p-3 sm:p-4 border-t border-[#e4e4e7] dark:border-[#262626] bg-white dark:bg-[#171717] grid grid-cols-2 gap-2 shrink-0 z-10 shadow-lg">
         <button
           id="btn-apply-figure-direct"
           type="button"
@@ -554,7 +546,7 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
             onDirectApply(draftSpec);
             if (onCloseMobileModal) onCloseMobileModal();
           }}
-          className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-md text-xs font-semibold bg-[#3ecf8e] hover:bg-[#34b27b] text-black transition-colors cursor-pointer min-h-[44px] leading-normal shadow-xs"
+          className="w-full inline-flex items-center justify-center px-2 py-2.5 rounded-md text-xs font-semibold bg-[#3ecf8e] hover:bg-[#34b27b] text-black transition-colors cursor-pointer min-h-[44px] leading-normal shadow-xs text-center"
         >
           Update Figure
         </button>
@@ -566,9 +558,9 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
             onProposeDirectEdit(draftSpec);
             if (onCloseMobileModal) onCloseMobileModal();
           }}
-          className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] transition-colors cursor-pointer min-h-[44px] leading-normal"
+          className="w-full inline-flex items-center justify-center px-2 py-2 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] transition-colors cursor-pointer min-h-[44px] leading-normal text-center"
         >
-          Preview Changes (2-Phase)
+          Preview (2-Phase)
         </button>
       </div>
     </aside>

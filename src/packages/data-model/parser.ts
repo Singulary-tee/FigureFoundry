@@ -4,6 +4,19 @@ export function parseCSV(csvText: string): Record<string, any>[] {
   const cleanText = csvText.trim();
   if (!cleanText) return [];
 
+  // Safety limits to prevent browser thread freeze on huge or malformed binary text
+  const MAX_CHAR_LIMIT = 2 * 1024 * 1024; // 2MB char limit
+  const MAX_ROWS_LIMIT = 5000; // Cap to 5000 rows for smooth local rendering
+
+  if (cleanText.length > MAX_CHAR_LIMIT) {
+    throw new Error(`File is too large. CSV text exceeds character safety limit of ${MAX_CHAR_LIMIT} characters.`);
+  }
+
+  // Quick binary/null-byte check
+  if (cleanText.includes('\x00')) {
+    throw new Error('Unsupported binary file format detected. Please upload a standard UTF-8 encoded plain-text CSV or JSON file.');
+  }
+
   const rows: string[][] = [];
   let currentRow: string[] = [];
   let currentField = '';
@@ -33,6 +46,11 @@ export function parseCSV(csvText: string): Record<string, any>[] {
       }
       currentRow = [];
       currentField = '';
+
+      // Early break if rows limit reached to keep app fully interactive
+      if (rows.length >= MAX_ROWS_LIMIT) {
+        break;
+      }
     } else {
       currentField += char;
     }
@@ -45,12 +63,14 @@ export function parseCSV(csvText: string): Record<string, any>[] {
     }
   }
 
-  if (rows.length < 2) return [];
+  if (rows.length < 2) {
+    throw new Error('CSV file must have a header row and at least one data row.');
+  }
 
   const headers = rows[0].map((h, idx) => h.trim() || `col_${idx + 1}`);
   const records: Record<string, any>[] = [];
 
-  for (let r = 1; r < rows.length; r++) {
+  for (let r = 1; r < Math.min(rows.length, MAX_ROWS_LIMIT); r++) {
     const row = rows[r];
     const record: Record<string, any> = {};
 
@@ -77,11 +97,22 @@ export function parseCSV(csvText: string): Record<string, any>[] {
 }
 
 export function parseJSON(jsonText: string): Record<string, any>[] {
+  const cleanText = jsonText.trim();
+  if (cleanText.includes('\x00')) {
+    throw new Error('Unsupported binary file format detected. Please upload a plain-text JSON file.');
+  }
+
   const parsed = JSON.parse(jsonText);
   if (!Array.isArray(parsed)) {
     throw new Error('JSON data must be an array of record objects (e.g. [{ "a": 1, "b": "x" }, ...]).');
   }
-  return parsed.filter(item => typeof item === 'object' && item !== null);
+  const filtered = parsed.filter(item => typeof item === 'object' && item !== null);
+  
+  const MAX_RECORDS_LIMIT = 5000;
+  if (filtered.length > MAX_RECORDS_LIMIT) {
+    return filtered.slice(0, MAX_RECORDS_LIMIT);
+  }
+  return filtered;
 }
 
 export function inferFieldType(values: any[]): StatisticalType {

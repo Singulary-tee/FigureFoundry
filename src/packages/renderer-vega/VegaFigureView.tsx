@@ -27,6 +27,71 @@ export const VegaFigureView: React.FC<VegaFigureViewProps> = ({
   const [vegaViewInstance, setVegaViewInstance] = useState<any>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [copiedSpec, setCopiedSpec] = useState(false);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [previewDimensions, setPreviewDimensions] = useState({ width: 0, height: 0 });
+
+  // Debounced ResizeObserver for main visual canvas to prevent squashing during mobile scrolling
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    let debounceTimer: any = null;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+
+      const { width, height } = entry.contentRect;
+
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        setDimensions((prev) => {
+          const widthChanged = Math.abs(prev.width - width) > 2;
+          // Ignore small dynamic height shifts (e.g. from mobile address bars collapsing/expanding)
+          const heightChanged = Math.abs(prev.height - height) > 40;
+          if (widthChanged || heightChanged) {
+            return { width, height };
+          }
+          return prev;
+        });
+      }, 100);
+    });
+
+    observer.observe(containerRef.current);
+    return () => {
+      observer.disconnect();
+      clearTimeout(debounceTimer);
+    };
+  }, [spec, profile]);
+
+  // Debounced ResizeObserver for the preview/diff visual canvas
+  useEffect(() => {
+    if (!previewContainerRef.current) return;
+
+    let debounceTimer: any = null;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+
+      const { width, height } = entry.contentRect;
+
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        setPreviewDimensions((prev) => {
+          const widthChanged = Math.abs(prev.width - width) > 2;
+          const heightChanged = Math.abs(prev.height - height) > 40;
+          if (widthChanged || heightChanged) {
+            return { width, height };
+          }
+          return prev;
+        });
+      }, 100);
+    });
+
+    observer.observe(previewContainerRef.current);
+    return () => {
+      observer.disconnect();
+      clearTimeout(debounceTimer);
+    };
+  }, [isDiffMode, activePreview, profile]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -58,7 +123,7 @@ export const VegaFigureView: React.FC<VegaFigureViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [spec, profile, theme]);
+  }, [spec, profile, theme, dimensions.width, dimensions.height]);
 
   useEffect(() => {
     if (!isDiffMode || !activePreview || !previewContainerRef.current) return;
@@ -80,7 +145,7 @@ export const VegaFigureView: React.FC<VegaFigureViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isDiffMode, activePreview, profile, theme]);
+  }, [isDiffMode, activePreview, profile, theme, previewDimensions.width, previewDimensions.height]);
 
   const handleCopySpec = () => {
     const specWithTheme = { ...spec, theme };
@@ -130,7 +195,7 @@ export const VegaFigureView: React.FC<VegaFigureViewProps> = ({
           <div>
             <h3 className="text-base font-semibold text-[#18181b] dark:text-[#EDEDED] leading-normal">Workspace Ready</h3>
             <p className="text-xs text-[#71717a] dark:text-[#8C8C8C] leading-relaxed mt-1">
-              Upload your CSV or JSON dataset using the top bar or drawer to compile a figure, or select a sample dataset from the menu above.
+              Import your CSV or JSON dataset using the Dataset panel, or select a sample dataset from the menu in the top bar above.
             </p>
           </div>
         </div>
