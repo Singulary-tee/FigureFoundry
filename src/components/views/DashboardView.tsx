@@ -126,42 +126,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* 1. Account & Workspace Level */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          
-          {/* Account Profile Card */}
-          <div className="bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl p-5 shadow-xs flex flex-col justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-[#f4f4f5] dark:border-[#27272a] pb-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#71717a] dark:text-[#a1a1aa] flex items-center gap-1.5">
-                  <User className="w-4 h-4 text-[#24b47e]" /> Account Identity
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#24b47e]/10 text-[#24b47e] uppercase">
-                  {account.type}
-                </span>
-              </div>
-              <div className="space-y-2.5">
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-zinc-400 dark:text-zinc-500 block">User Name</label>
-                  <span className="text-sm font-semibold text-[#0f172a] dark:text-[#f4f4f5]">{account.name}</span>
-                </div>
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-zinc-400 dark:text-zinc-500 block">Email Address</label>
-                  <span className="text-xs font-mono text-zinc-600 dark:text-zinc-300">{account.email}</span>
-                </div>
-                <div>
-                  <label className="text-[10px] uppercase font-bold text-zinc-400 dark:text-zinc-500 block">Unique User ID</label>
-                  <span className="text-xs font-mono text-zinc-500">{account.id}</span>
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 text-[11px] text-zinc-400 border-t border-[#f4f4f5] dark:border-[#27272a] mt-4">
-              Authorized via automatic Guest Session tokens.
-            </div>
-          </div>
-
-          {/* Workspace Level Card */}
-          <div className="md:col-span-2 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl p-5 shadow-xs space-y-4">
+        {/* 1. Workspace Level */}
+        <div className="grid grid-cols-1 gap-6">
+          {/* Workspace Card */}
+          <div className="bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl p-5 shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-[#f4f4f5] dark:border-[#27272a] pb-3">
               <span className="text-xs font-bold uppercase tracking-wider text-[#71717a] dark:text-[#a1a1aa] flex items-center gap-1.5">
                 <Building className="w-4 h-4 text-blue-500" /> Active Workspace Scope
@@ -262,58 +230,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               })}
             </div>
 
-            {/* Team Directory (Active Workspace) */}
-            <div className="mt-4 pt-4 border-t border-[#f4f4f5] dark:border-[#27272a] space-y-3">
-               <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                    Workspace Team Directory
-                  </span>
-                  <button
-                    onClick={() => {
-                      const email = prompt('Enter email address to invite:');
-                      if (email) alert(`Invitation sent to ${email}`);
-                    }}
-                    className="text-[10px] font-bold text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 px-2 py-1 rounded transition-colors cursor-pointer"
-                  >
-                    + Invite Member
-                  </button>
-               </div>
-               <div className="bg-[#fafafa] dark:bg-[#121214] rounded-lg border border-[#e4e4e7] dark:border-[#27272a] divide-y divide-[#e4e4e7] dark:divide-[#27272a]">
-                 {activeWorkspace?.memberIds.map(memberId => {
-                   const isMe = memberId === account.id;
-                   const isOwner = memberId === activeWorkspace.ownerId;
-                   return (
-                     <div key={memberId} className="flex items-center justify-between px-3 py-2 text-xs">
-                       <div className="flex items-center gap-2">
-                         <div className="w-5 h-5 rounded bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-600 dark:text-zinc-400">
-                           {isMe ? account.name.charAt(0) : 'U'}
-                         </div>
-                         <div>
-                           <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                             {isMe ? account.name : `User ${memberId}`}
-                           </span>
-                           {isMe && <span className="ml-1.5 text-[9px] text-zinc-400 uppercase tracking-wider">(You)</span>}
-                           {isOwner && <span className="ml-1.5 px-1 rounded bg-amber-500/10 text-amber-500 text-[9px] uppercase font-bold tracking-wider">Owner</span>}
-                         </div>
-                       </div>
-                       {!isOwner && (
-                         <button
-                           onClick={() => {
-                             if (true) {
-                               alert('Feature coming soon: Requires backend permission synchronization.');
-                             }
-                           }}
-                           className="text-zinc-400 hover:text-rose-500 transition-colors cursor-pointer"
-                           title="Remove member"
-                         >
-                           <Trash2 className="w-3.5 h-3.5" />
-                         </button>
-                       )}
-                     </div>
-                   );
-                 })}
-               </div>
-            </div>
           </div>
         </div>
 
@@ -325,7 +241,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <Folder className="w-4.5 h-4.5 text-amber-500" /> Workspace Research Projects
               </h2>
               <p className="text-xs text-[#71717a]">
-                Active workspace has {workspaceProjects.length} dedicated project containers.
+                {workspaceProjects.length === 1
+                  ? '1 project in this workspace'
+                  : `${workspaceProjects.length} projects in this workspace`}
               </p>
             </div>
             <button

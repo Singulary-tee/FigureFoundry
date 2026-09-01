@@ -42,13 +42,27 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
       if (storedLegend) {
         setLegendText(storedLegend);
       } else {
-        // Auto-generate comprehensive figure caption
-        const defaultCaption = `Project: ${projectName}\nFigure 1. Multi-panel synthesis and statistical assessment of ${figure.name}.\n\n` +
-          figure.panels
-            .map((p) => `(${p.letter}) ${(p.spec as any).title || p.label || p.spec.kind}: Detailed evaluation under ${figure.name} experimental protocol.`)
-            .join('\n\n') +
-          '\n\nError bars indicate 95% confidence intervals derived from inverse-variance weighting.';
-        setLegendText(defaultCaption);
+        // Auto-generate a starting draft from the actual panel specs
+        const lines: string[] = [];
+        const numbered = figure.panels.filter((p) => p.letter);
+        const caption = figure.panels.find((p) => !p.letter && p.spec.kind === 'text-caption');
+        const titles = numbered
+          .map((p) => {
+            const s = p.spec as any;
+            const t = s.title || s.spec?.title || p.label || p.spec.kind;
+            return `(${p.letter}) ${t}`;
+          })
+          .join(', ');
+        if (caption) {
+          const c = caption.spec as any;
+          lines.push(`${c.title || 'Figure caption'}`);
+          lines.push(c.captionText || '');
+        } else {
+          lines.push(`Figure 1. ${figure.name}.`);
+        }
+        lines.push(`Panels: ${titles}.`);
+        lines.push('Edit this draft freely — it is saved per project in this browser.');
+        setLegendText(lines.filter(Boolean).join('\n\n'));
       }
 
       if (storedMethods) {

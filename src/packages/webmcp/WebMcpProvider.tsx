@@ -37,9 +37,15 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
   const customToolsRef = useRef<Map<string, { definition: WebMcpToolDefinition; executeFn?: (args: any) => Promise<any> }>>(new Map());
   const [, setVersion] = useState(0);
 
-  const server = useMemo(() => {
-    return new WebMcpServer(dispatchDomainAction, () => currentState);
-  }, [dispatchDomainAction, currentState]);
+  // Keep a stable server instance across renders; it reads fresh state via getState().
+  const dispatchRef = useRef(dispatchDomainAction);
+  dispatchRef.current = dispatchDomainAction;
+  const stateRef = useRef(currentState);
+  stateRef.current = currentState;
+  const server = useMemo(
+    () => new WebMcpServer((a) => dispatchRef.current(a), () => stateRef.current),
+    []
+  );
 
   const registeredTools = useMemo(() => {
     const datasetTools = getDatasetAwareTools(currentState.datasetId, currentState.currentRevision);

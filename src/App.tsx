@@ -746,11 +746,9 @@ export default function App() {
               <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-[#1f1f23] px-2.5 py-1 rounded-md">
                 Standard Workspace
               </span>
-              <span className="text-xs text-zinc-400 hidden sm:inline">•</span>
-              <span className="text-xs text-zinc-400 font-mono hidden sm:inline">Guest Account Session</span>
             </div>
 
-            {/* Right: Theme, Quick Jump, User Profile */}
+            {/* Right: Theme, Quick Jump */}
             <div className="flex items-center gap-4">
               {/* Quick Launch Editor */}
               {figure && (
@@ -777,17 +775,6 @@ export default function App() {
                   </svg>
                 )}
               </button>
-
-              {/* Profile Avatar Badge */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-[#24b47e]/25 text-[#24b47e] font-bold text-xs flex items-center justify-center border border-[#24b47e]/40 select-none">
-                  GR
-                </div>
-                <div className="hidden md:flex flex-col text-left leading-none">
-                  <span className="text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5]">Guest Researcher</span>
-                  <span className="text-[10px] text-zinc-400 mt-0.5">Role: Collaborator</span>
-                </div>
-              </div>
             </div>
           </header>
         )}

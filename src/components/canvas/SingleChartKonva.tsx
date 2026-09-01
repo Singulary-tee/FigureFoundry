@@ -35,9 +35,12 @@ export const SingleChartKonva: React.FC<SingleChartKonvaProps> = ({
       const profile = profileDataset(datasetId);
       const vegaSpec = compileToVegaLiteSpec((spec?.spec || {}) as any, profile, false);
 
-      // Adjust width & height for the panel
+      // Adjust width & height for the panel.
+      // The Konva layer already draws the panel letter + title header, so strip
+      // Vega's own title block to avoid rendering the title twice.
+      const { title: _strippedTitle, ...vegaSpecNoTitle } = vegaSpec as any;
       const finalSpec: any = {
-        ...vegaSpec,
+        ...vegaSpecNoTitle,
         width: Math.max(100, width - 60),
         height: Math.max(80, height - 70),
         background: 'transparent',
