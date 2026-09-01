@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
+import logo from '../../assets/logo.webp';
 import {
   LayoutDashboard,
   Folder,
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react';
 import { MultiPanelFigure, Panel, Layer } from '../../types/multipanel';
 import { SidebarSeparator } from './SidebarSeparator';
+import { ConfirmDeleteModal, ConfirmDeleteState } from '../modals/ConfirmDeleteModal';
 
 export type AppView = 'figures' | 'dashboard' | 'data' | 'analyses' | 'notes' | 'settings' | 'help';
 
@@ -109,32 +111,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onSelectDataset,
 }) => {
   const [isFigureExpanded, setIsFigureExpanded] = useState(true);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [tempTitle, setTempTitle] = useState(figureTitle);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setTempTitle(figureTitle);
-  }, [figureTitle]);
-
-  // Click outside listener for export dropdown
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
-        setIsExportOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleTitleSubmit = () => {
-    if (tempTitle.trim() && onRenameFigure) {
-      onRenameFigure(tempTitle.trim());
-    }
-    setIsEditingTitle(false);
-  };
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState | null>(null);
 
   // Selected panel's spec element toggles
   const isEditorMode = ['figures', 'data', 'analyses', 'notes'].includes(activeView);
@@ -562,7 +539,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            onDeleteLayer(layer.panelId);
+                                            setConfirmDelete({
+                                              isOpen: true,
+                                              title: `Delete Panel "${panel.label}"`,
+                                              description: `Are you sure you want to delete panel "${panel.label}" from this figure layout?`,
+                                              confirmLabel: 'Delete Panel',
+                                              onConfirm: () => {
+                                                onDeleteLayer(layer.panelId);
+                                              },
+                                            });
                                           }}
                                           title="Delete panel"
                                           className="p-0.5 text-[#71717a] hover:text-rose-500 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
@@ -658,11 +643,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               // 2. Outer Shell Mode: Logo, Dashboard-level links, and "Open Editor" CTA
               <>
                 {/* Product Logo / Branding */}
-                <div className="flex items-center gap-2 px-2.5 py-1">
-                  <div className="w-8 h-8 rounded-lg bg-[#24b47e]/15 flex items-center justify-center text-[#24b47e] font-bold text-lg tracking-tighter">
-                    Ff
+                <div className="flex items-center gap-2.5 px-2.5 py-1">
+                  <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                    <img src={logo} alt="FigureFoundry Logo" className="w-8 h-8 shrink-0 object-contain block" referrerPolicy="no-referrer" />
                   </div>
-                  <div className="flex flex-col">
+                  <div className="flex flex-col justify-center">
                     <span className="font-bold text-sm tracking-tight text-[#0f172a] dark:text-[#f4f4f5]">
                       FigureFoundry
                     </span>
@@ -779,6 +764,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         </div>
       </aside>
       <SidebarSeparator side="left" isCollapsed={false} onToggle={onToggleCollapse} />
+
+      <ConfirmDeleteModal
+        state={confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+      />
     </div>
   );
 };

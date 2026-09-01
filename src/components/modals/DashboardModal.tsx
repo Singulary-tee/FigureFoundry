@@ -47,7 +47,7 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <LayoutDashboard className="w-4 h-4" />
             </div>
             <div>
@@ -73,7 +73,7 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
             <Card className="bg-muted/50">
               <CardContent className="p-3 space-y-1">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground">Revision Number</span>
-                <div className="font-mono text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                <div className="font-mono text-xl font-bold text-primary">
                   Rev {revision}
                 </div>
                 <span className="text-[10px] text-muted-foreground">Optimistic OCC synced</span>
@@ -107,7 +107,7 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Agent-Editable Panel:</span>
-                  <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                  <span className="font-mono font-semibold text-primary">
                     {agentPanel ? `Panel ${agentPanel.letter} (${agentPanel.id})` : 'None'}
                   </span>
                 </div>

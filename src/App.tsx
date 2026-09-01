@@ -736,6 +736,7 @@ export default function App() {
             onExportSvg={handleExportFullSvg}
             onExportJson={handleExportJson}
             onOpenWebMcpDev={() => setIsWebMcpDevPanelOpen(true)}
+            onOpenMobileInspector={() => setIsMobileInspectorOpen(true)}
           />
         ) : (
           /* Immersive, clean Outer Shell Header */
@@ -997,10 +998,12 @@ export default function App() {
         />
 
         {/* WebMCP Dev Panel */}
-        <WebMcpDevPanel
-          isOpen={isWebMcpDevPanelOpen}
-          onClose={() => setIsWebMcpDevPanelOpen(false)}
-        />
+        {import.meta.env.DEV && (
+          <WebMcpDevPanel
+            isOpen={isWebMcpDevPanelOpen}
+            onClose={() => setIsWebMcpDevPanelOpen(false)}
+          />
+        )}
       </div>
     </WebMcpProvider>
   );

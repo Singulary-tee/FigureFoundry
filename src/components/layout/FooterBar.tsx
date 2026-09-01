@@ -93,8 +93,8 @@ export const FooterBar: React.FC<FooterBarProps> = ({
       </div>
 
       {/* Right: Dimensions */}
-      <div className="hidden sm:flex items-center gap-3 text-[11px] text-[#71717a] dark:text-[#a1a1aa] shrink-0">
-        <div className="font-mono">
+      <div className="flex items-center gap-2 sm:gap-3 text-[11px] text-[#71717a] dark:text-[#a1a1aa] shrink-0">
+        <div className="hidden sm:block font-mono">
           {canvasWidth} × {canvasHeight} px
         </div>
       </div>

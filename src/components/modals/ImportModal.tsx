@@ -99,7 +99,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <Upload className="w-4 h-4" />
             </div>
             <div>
@@ -142,7 +142,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-              isDragging ? 'border-emerald-500 bg-emerald-500/10' : 'border-border hover:border-emerald-500/50 bg-muted/30'
+              isDragging ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50 bg-muted/30'
             }`}
           >
             <input
@@ -152,7 +152,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
               className="hidden"
               onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
             />
-            <div className="mx-auto w-10 h-10 rounded-full bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2">
+            <div className="mx-auto w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-2">
               <Upload className="w-5 h-5" />
             </div>
             <p className="font-medium text-foreground">Click to browse or drop file here</p>
@@ -163,11 +163,11 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
             <Card className="bg-muted/50">
               <CardContent className="p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-emerald-600" />
+                  <FileText className="w-4 h-4 text-primary" />
                   <span className="font-mono text-xs">{filename}</span>
                 </div>
                 {validationSuccess && (
-                  <span className="flex items-center gap-1 text-emerald-600 font-semibold text-[11px]">
+                  <span className="flex items-center gap-1 text-primary font-semibold text-[11px]">
                     <CheckCircle2 className="w-4 h-4" /> {validationSuccess}
                   </span>
                 )}

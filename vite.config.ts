@@ -3,9 +3,22 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { execSync } from 'child_process';
+
+let commitSha = process.env.VITE_COMMIT_SHA || process.env.COMMIT_SHA || '';
+if (!commitSha) {
+  try {
+    commitSha = execSync('git rev-parse --short HEAD', { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    commitSha = '4e743f8';
+  }
+}
 
 export default defineConfig(() => {
   return {
+    define: {
+      __BUILD_COMMIT__: JSON.stringify(commitSha || '4e743f8'),
+    },
     plugins: [
       react(),
       tailwindcss(),

@@ -13,10 +13,12 @@ import {
   AlertCircle,
   FolderKanban,
   Building2,
+  Trash2,
 } from 'lucide-react';
 import { profileDataset, getRegisteredDatasets } from '../../packages/data-model/profiler';
 import { useDomainStore } from '../../packages/domain/store';
 import { ImportModal } from '../modals/ImportModal';
+import { ConfirmDeleteModal, ConfirmDeleteState } from '../modals/ConfirmDeleteModal';
 
 interface DataViewProps {
   currentDatasetId?: string;
@@ -39,6 +41,7 @@ export const DataView: React.FC<DataViewProps> = ({
   const [sortAsc, setSortAsc] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState | null>(null);
 
   const pageSize = 15;
 
@@ -122,18 +125,10 @@ export const DataView: React.FC<DataViewProps> = ({
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#e4e4e7] dark:border-[#27272a] min-w-0">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs text-[#71717a] dark:text-[#a1a1aa] font-mono truncate">
-                {profile.rowCount} Observations • {profile.fields.length} Columns
-              </span>
-            </div>
             <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] dark:text-[#f4f4f5] tracking-tight flex items-center gap-2 truncate">
               <Database className="w-5 h-5 sm:w-6 sm:h-6 text-[#24b47e] shrink-0" />
               <span className="truncate">{profile.title}</span>
             </h1>
-            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-0.5 line-clamp-2">
-              {profile.description}
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0 max-w-full">
@@ -195,6 +190,25 @@ export const DataView: React.FC<DataViewProps> = ({
             >
               <Download className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
               <span>Export CSV</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setConfirmDelete({
+                  isOpen: true,
+                  title: `Delete Dataset "${profile.title}"`,
+                  description: `Are you sure you want to permanently delete dataset "${profile.title}"? This dataset will be removed from all associated figures.`,
+                  confirmLabel: 'Delete Dataset',
+                  onConfirm: () => {
+                    dispatch({ type: 'DELETE_DATASET', payload: selectedDatasetId });
+                  },
+                });
+              }}
+              className="px-3 py-2 rounded-lg bg-white dark:bg-[#18181b] border border-rose-200 dark:border-rose-900/50 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+              title="Delete dataset"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+              <span>Delete Dataset</span>
             </button>
           </div>
         </div>
@@ -418,6 +432,11 @@ export const DataView: React.FC<DataViewProps> = ({
           isOpen={isImportModalOpen}
           onClose={() => setIsImportModalOpen(false)}
           defaultScope="project"
+        />
+
+        <ConfirmDeleteModal
+          state={confirmDelete}
+          onClose={() => setConfirmDelete(null)}
         />
       </div>
     </div>

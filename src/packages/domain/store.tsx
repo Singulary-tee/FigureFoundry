@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { DomainState, INITIAL_DOMAIN_STATE, INITIAL_FIGURE_STATE } from './state';
 import { DomainCommand } from './commands';
 import { domainReducer } from './reducer';
@@ -72,35 +72,22 @@ export const globalFigureStore = {
   subscribe: (listener: () => void) => globalDomainStore.subscribe(listener),
 };
 
-// React Context for Domain Store
-const DomainStoreContext = createContext<{
-  state: DomainState;
-  dispatch: React.Dispatch<DomainCommand>;
-}>({
-  state: INITIAL_DOMAIN_STATE,
-  dispatch: () => {},
-});
+export function DomainStoreProvider({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
 
-export const DomainStoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, dispatch] = useReducer(domainReducer, INITIAL_DOMAIN_STATE);
+export function useDomainStore(): { state: DomainState; dispatch: (command: DomainCommand) => void } {
+  const state = useSyncExternalStore(
+    globalDomainStore.subscribe.bind(globalDomainStore),
+    globalDomainStore.getState.bind(globalDomainStore),
+    globalDomainStore.getState.bind(globalDomainStore)
+  ) as DomainState;
 
-  // Sync with global store instance for external WebMCP tool calls
-  useEffect(() => {
-    const unsubscribe = globalDomainStore.subscribe((nextState) => {
-      // Keep global store in sync
-    });
-    return unsubscribe;
+  const dispatch = useCallback((command: DomainCommand) => {
+    globalDomainStore.dispatch(command);
   }, []);
 
-  return (
-    <DomainStoreContext.Provider value={{ state, dispatch }}>
-      {children}
-    </DomainStoreContext.Provider>
-  );
-};
-
-export function useDomainStore() {
-  return useContext(DomainStoreContext);
+  return { state, dispatch };
 }
 
 export function exportBundle(project: FigureProject): ExportBundle {

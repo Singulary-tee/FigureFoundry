@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { FigureSpec, DatasetProfile, FigureIntent, MarkType } from '../types';
 import { Check, X, SlidersHorizontal, Axis3D, Palette, Layers } from 'lucide-react';
+import { Button } from './ui/button';
+import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 
 interface EncodingPanelProps {
   currentSpec: FigureSpec;
@@ -143,66 +145,29 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
 
         </div>
 
-        <div className="flex items-center gap-1 overflow-x-auto p-1 bg-[#f4f4f5] dark:bg-[#121212] rounded-lg border border-[#e4e4e7] dark:border-[#262626] scrollbar-none">
-          <button
-            onClick={() => setActiveCategory('general')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap min-h-[32px] cursor-pointer ${
-              activeCategory === 'general'
-                ? 'bg-white dark:bg-[#1f1f1f] text-[#18181b] dark:text-[#EDEDED] shadow-xs'
-                : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>General</span>
-          </button>
-
-          <button
-            onClick={() => setActiveCategory('axes')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap min-h-[32px] cursor-pointer ${
-              activeCategory === 'axes'
-                ? 'bg-white dark:bg-[#1f1f1f] text-[#18181b] dark:text-[#EDEDED] shadow-xs'
-                : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-            }`}
-          >
-            <Axis3D className="w-3.5 h-3.5" />
-            <span>Axes</span>
-          </button>
-
-          <button
-            onClick={() => setActiveCategory('grouping')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap min-h-[32px] cursor-pointer ${
-              activeCategory === 'grouping'
-                ? 'bg-white dark:bg-[#1f1f1f] text-[#18181b] dark:text-[#EDEDED] shadow-xs'
-                : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Groups</span>
-          </button>
-
-          <button
-            onClick={() => setActiveCategory('style')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap min-h-[32px] cursor-pointer ${
-              activeCategory === 'style'
-                ? 'bg-white dark:bg-[#1f1f1f] text-[#18181b] dark:text-[#EDEDED] shadow-xs'
-                : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-            }`}
-          >
-            <Palette className="w-3.5 h-3.5" />
-            <span>Style & Stats</span>
-          </button>
-
-          <button
-            onClick={() => setActiveCategory('all')}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap min-h-[32px] cursor-pointer ${
-              activeCategory === 'all'
-                ? 'bg-white dark:bg-[#1f1f1f] text-[#18181b] dark:text-[#EDEDED] shadow-xs'
-                : 'text-[#71717a] dark:text-[#8C8C8C] hover:text-[#18181b] dark:hover:text-[#EDEDED]'
-            }`}
-          >
-            <span>All</span>
-          </button>
-        </div>
+        <Tabs value={activeCategory} onValueChange={(val) => setActiveCategory(val as TabCategory)} className="w-full">
+          <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-[#f4f4f5] dark:bg-[#121212] rounded-lg border border-[#e4e4e7] dark:border-[#262626]">
+            <TabsTrigger value="general" className="flex items-center gap-1 text-xs py-1.5 px-2.5">
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>General</span>
+            </TabsTrigger>
+            <TabsTrigger value="axes" className="flex items-center gap-1 text-xs py-1.5 px-2.5">
+              <Axis3D className="w-3.5 h-3.5" />
+              <span>Axes</span>
+            </TabsTrigger>
+            <TabsTrigger value="grouping" className="flex items-center gap-1 text-xs py-1.5 px-2.5">
+              <Layers className="w-3.5 h-3.5" />
+              <span>Groups</span>
+            </TabsTrigger>
+            <TabsTrigger value="style" className="flex items-center gap-1 text-xs py-1.5 px-2.5">
+              <Palette className="w-3.5 h-3.5" />
+              <span>Style & Stats</span>
+            </TabsTrigger>
+            <TabsTrigger value="all" className="flex items-center gap-1 text-xs py-1.5 px-2.5">
+              <span>All</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       <div className="flex-1 p-3 sm:p-4 space-y-4 overflow-y-auto min-h-0">
@@ -539,29 +504,30 @@ export const EncodingPanel: React.FC<EncodingPanelProps> = ({
       </div>
 
       <div className="p-3 sm:p-4 border-t border-[#e4e4e7] dark:border-[#262626] bg-white dark:bg-[#171717] grid grid-cols-2 gap-2 shrink-0 z-10 shadow-lg">
-        <button
+        <Button
           id="btn-apply-figure-direct"
           type="button"
           onClick={() => {
             onDirectApply(draftSpec);
             if (onCloseMobileModal) onCloseMobileModal();
           }}
-          className="w-full inline-flex items-center justify-center px-2 py-2.5 rounded-md text-xs font-semibold bg-[#3ecf8e] hover:bg-[#34b27b] text-black transition-colors cursor-pointer min-h-[44px] leading-normal shadow-xs text-center"
+          className="w-full text-xs font-semibold bg-[#3ecf8e] hover:bg-[#34b27b] text-black min-h-[44px] cursor-pointer"
         >
           Update Figure
-        </button>
+        </Button>
 
-        <button
+        <Button
           id="btn-stage-figure-preview"
           type="button"
+          variant="outline"
           onClick={() => {
             onProposeDirectEdit(draftSpec);
             if (onCloseMobileModal) onCloseMobileModal();
           }}
-          className="w-full inline-flex items-center justify-center px-2 py-2 rounded-md text-xs font-medium text-[#18181b] dark:text-[#EDEDED] hover:text-[#000] dark:hover:text-white bg-[#f4f4f5] dark:bg-[#1f1f1f] hover:bg-[#e4e4e7] dark:hover:bg-[#282828] border border-[#e4e4e7] dark:border-[#2e2e2e] hover:border-[#a1a1aa] dark:hover:border-[#383838] transition-colors cursor-pointer min-h-[44px] leading-normal text-center"
+          className="w-full text-xs font-medium min-h-[44px] cursor-pointer"
         >
           Preview (2-Phase)
-        </button>
+        </Button>
       </div>
     </aside>
   );

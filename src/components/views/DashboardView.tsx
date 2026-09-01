@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ConfirmDeleteModal, ConfirmDeleteState } from '../modals/ConfirmDeleteModal';
 import {
   LayoutDashboard,
   Layers,
@@ -43,6 +44,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+
+  // Confirmation modal state
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState | null>(null);
   const [newProjectDesc, setNewProjectDesc] = useState('');
 
   const [showNewFigureForm, setShowNewFigureForm] = useState(false);
@@ -86,7 +90,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
     setNewFigureName('');
     setShowNewFigureForm(false);
-    onNavigate('figures');
   };
 
   return (
@@ -94,7 +97,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="max-w-6xl mx-auto space-y-8 min-w-0">
         
         {/* Top Header & Breadcrumb Hierarchy */}
-        <div className="pb-5 border-b border-[#e4e4e7] dark:border-[#27272a] min-w-0 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="pb-5 border-b border-[#e4e4e7] dark:border-[#27272a] min-w-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-medium">
               <span className="flex items-center gap-1"><User className="w-3.5 h-3.5 text-[#24b47e]" /> {account.name}</span>
@@ -108,11 +111,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
             </div>
             <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] dark:text-[#f4f4f5] tracking-tight">
-              Administrative Control Dashboard
+              Dashboard
             </h1>
-            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa]">
-              Manage the complete administrative hierarchy of workspaces, projects, data assets, and canvas compositions.
-            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => onNavigate('figures')}
+              className="px-4 py-2 bg-[#24b47e] hover:bg-[#1f9d6e] text-white rounded-lg text-xs font-bold transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-xs whitespace-nowrap flex items-center gap-2"
+            >
+              <ImageIcon className="w-4 h-4" />
+              <span>Open Figure Editor</span>
+            </button>
           </div>
         </div>
 
@@ -210,13 +220,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         : 'border-[#e4e4e7] dark:border-[#27272a] bg-[#fafafa] dark:bg-[#121214] hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
                     }`}
                   >
-                    <div className="space-y-1">
+                    <div className="space-y-1 pr-6">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-sm text-[#0f172a] dark:text-[#f4f4f5] truncate pr-4">
                           {ws.name}
                         </span>
                         {isActive && (
-                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" title="Active workspace" />
                         )}
                       </div>
                       <p className="text-[11px] text-[#71717a] line-clamp-1">
@@ -225,7 +235,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-zinc-400">
                       <span>{projectCount} projects</span>
-                      <span>{ws.memberIds?.length || 1} members</span>
+                      <div className="flex items-center gap-2">
+                        <span>{ws.memberIds?.length || 1} members</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDelete({
+                              isOpen: true,
+                              title: `Delete Workspace "${ws.name}"`,
+                              description: `Are you sure you want to permanently delete workspace "${ws.name}" and all its associated projects? This action cannot be undone.`,
+                              confirmLabel: 'Delete Workspace',
+                              onConfirm: () => {
+                                onDispatchAction({ type: 'DELETE_WORKSPACE', payload: ws.id });
+                              },
+                            });
+                          }}
+                          className="p-1 rounded text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          title="Delete workspace"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -269,7 +299,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                        {!isOwner && (
                          <button
                            onClick={() => {
-                             if (confirm('Remove this member from the workspace?')) {
+                             if (true) {
                                alert('Feature coming soon: Requires backend permission synchronization.');
                              }
                            }}
@@ -401,9 +431,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="flex items-center gap-2 self-start">
                         <button
                           onClick={() => {
-                            if (confirm(`Are you sure you want to delete the project "${proj.name}"?`)) {
-                              onDispatchAction({ type: 'DELETE_PROJECT', payload: proj.id });
-                            }
+                            setConfirmDelete({
+                              isOpen: true,
+                              title: `Delete Project "${proj.name}"`,
+                              description: `Are you sure you want to delete the project "${proj.name}"? Figures inside will remain accessible in the global domain store.`,
+                              confirmLabel: 'Delete Project',
+                              onConfirm: () => {
+                                onDispatchAction({ type: 'DELETE_PROJECT', payload: proj.id });
+                              },
+                            });
                           }}
                           className="px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 text-[11px] font-bold text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                         >
@@ -496,7 +532,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                         onDispatchAction({ type: 'SWITCH_PROJECT', payload: proj.id });
                                       }
                                       onDispatchAction({ type: 'SWITCH_FIGURE', payload: fig.id });
-                                      onNavigate('figures');
                                     }}
                                     className={`px-2.5 py-1 rounded text-[10px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
                                       isFigActive
@@ -504,14 +539,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                         : 'bg-zinc-50 dark:bg-[#27272a] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                                     }`}
                                   >
-                                    <span>{isFigActive ? 'Open Editor' : 'Load Figure'}</span>
-                                    <ExternalLink className="w-3 h-3" />
+                                    <span>{isFigActive ? 'Active Figure' : 'Load Figure'}</span>
                                   </button>
                                   <button
                                     onClick={() => {
-                                      if (confirm('Are you sure you want to delete this figure?')) {
-                                        onDispatchAction({ type: 'DELETE_FIGURE', payload: fig.id });
-                                      }
+                                      const figTitle = fig.name || 'Untitled Figure';
+                                      setConfirmDelete({
+                                        isOpen: true,
+                                        title: `Delete Figure "${figTitle}"`,
+                                        description: `Are you sure you want to permanently delete figure "${figTitle}"? This action cannot be undone.`,
+                                        confirmLabel: 'Delete Figure',
+                                        onConfirm: () => {
+                                          onDispatchAction({ type: 'DELETE_FIGURE', payload: fig.id });
+                                        },
+                                      });
                                     }}
                                     title="Delete figure"
                                     className="p-1 rounded text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
@@ -576,9 +617,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                   </button>
                                   <button
                                     onClick={() => {
-                                      if (confirm('Are you sure you want to remove this dataset from the project?')) {
-                                        onDispatchAction({ type: 'TOGGLE_DATASET_SCOPE', payload: { datasetId: ds.id, scope: 'project' } });
-                                      }
+                                      setConfirmDelete({
+                                        isOpen: true,
+                                        title: `Remove Dataset "${ds.title}"`,
+                                        description: `Are you sure you want to remove dataset "${ds.title}" from this project? The dataset will remain available in the global Data tab.`,
+                                        confirmLabel: 'Remove Dataset',
+                                        onConfirm: () => {
+                                          onDispatchAction({ type: 'TOGGLE_DATASET_SCOPE', payload: { datasetId: ds.id, scope: 'project' } });
+                                        },
+                                      });
                                     }}
                                     title="Remove dataset"
                                     className="p-1 rounded text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
@@ -603,6 +650,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+
+      <ConfirmDeleteModal
+        state={confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+      />
     </div>
   );
 };

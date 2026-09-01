@@ -97,17 +97,9 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#e4e4e7] dark:border-[#27272a] min-w-0">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs text-[#71717a] dark:text-[#a1a1aa] font-mono truncate">
-                {saveStatus === 'saving' ? 'Saving...' : 'All notes saved'}
-              </span>
-            </div>
             <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] dark:text-[#f4f4f5] tracking-tight truncate">
               Legends & Manuscript Notes
             </h1>
-            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-0.5 line-clamp-2">
-              Draft scientific captions, methodological text, and publication references
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -124,13 +116,6 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
             >
               <Download className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
               <span>Export .md</span>
-            </button>
-            <button
-              onClick={() => onNavigate('figures')}
-              className="px-3.5 py-2 rounded-lg bg-[#24b47e] hover:bg-[#1f9d6e] text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-            >
-              <span>Canvas</span>
-              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </button>
           </div>
         </div>

@@ -7,6 +7,7 @@ export type DomainCommand =
   | { type: 'SWITCH_ACCOUNT'; payload: 'guest' | 'authenticated' }
   | { type: 'SWITCH_WORKSPACE'; payload: string }
   | { type: 'CREATE_WORKSPACE'; payload: { name: string } }
+  | { type: 'DELETE_WORKSPACE'; payload: string }
   | { type: 'SWITCH_PROJECT'; payload: string }
   | { type: 'CREATE_PROJECT'; payload: { name: string; description?: string } }
   | { type: 'DELETE_PROJECT'; payload: string }

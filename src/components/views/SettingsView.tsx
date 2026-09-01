@@ -10,6 +10,7 @@ import {
   FileCheck,
   Shield,
   Layers,
+  Info,
 } from 'lucide-react';
 import { MultiPanelFigure } from '../../types/multipanel';
 
@@ -78,13 +79,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               className="px-4 py-2 bg-[#24b47e] hover:bg-[#1f9d6e] text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
             >
               <span>Save & Apply</span>
-            </button>
-            <button
-              onClick={() => onNavigate('figures')}
-              className="px-3.5 py-2 rounded-lg bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] transition-colors flex items-center gap-2 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-            >
-              <span>Back to Canvas</span>
-              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </button>
           </div>
         </div>

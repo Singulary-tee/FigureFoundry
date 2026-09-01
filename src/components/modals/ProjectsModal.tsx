@@ -13,6 +13,7 @@ import {
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { ScrollArea } from '../ui/scroll-area';
+import { ConfirmDeleteModal, ConfirmDeleteState } from './ConfirmDeleteModal';
 
 interface ProjectsModalProps {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
 }) => {
   const [projects, setProjects] = useState<SavedProject[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -117,10 +119,18 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
     onClose();
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = (proj: SavedProject, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = projects.filter((p) => p.id !== id);
-    saveProjectsToStorage(updated);
+    setConfirmDelete({
+      isOpen: true,
+      title: `Delete Saved Project "${proj.name}"`,
+      description: `Are you sure you want to delete "${proj.name}" from your local browser storage?`,
+      confirmLabel: 'Delete Project',
+      onConfirm: () => {
+        const updated = projects.filter((p) => p.id !== proj.id);
+        saveProjectsToStorage(updated);
+      },
+    });
   };
 
   const handleExportJson = (proj: SavedProject, e: React.MouseEvent) => {
@@ -141,7 +151,7 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
       <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <FolderPlus className="w-4 h-4" />
             </div>
             <div>
@@ -170,8 +180,8 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
                   onLoadFigure(proj.figure);
                   onClose();
                 }}
-                className={`cursor-pointer transition-colors p-3.5 bg-muted/40 hover:border-emerald-500/50 ${
-                  isCurrent ? 'border-emerald-500 bg-emerald-500/5' : ''
+                className={`cursor-pointer transition-colors p-3.5 bg-muted/40 hover:border-primary/50 ${
+                  isCurrent ? 'border-primary bg-primary/5' : ''
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -197,7 +207,7 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
                         variant="ghost"
                         className="h-7 w-7 text-destructive hover:text-destructive"
                         title="Delete Project"
-                        onClick={(e) => handleDelete(proj.id, e)}
+                        onClick={(e) => handleDelete(proj, e)}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
@@ -215,6 +225,11 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <ConfirmDeleteModal
+        state={confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+      />
     </Dialog>
   );
 };

@@ -28,32 +28,19 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
       const ws = state.workspaces.find((w) => w.id === wsId);
       if (!ws) return state;
 
-      // Find first project in this workspace or create a default if empty
-      let activeProj = state.projects.find((p) => p.workspaceId === wsId);
-      let updatedProjects = state.projects;
-      if (!activeProj) {
-        activeProj = {
-          id: `proj-${Date.now()}`,
-          workspaceId: wsId,
-          name: `${ws.name} Default Project`,
-          description: 'Primary project container for multi-panel figures.',
-          datasetIds: ['palmer-penguins'],
-          figureIds: [DEFAULT_MULTIPANEL_FIGURE.id],
-          createdAt: new Date().toISOString().split('T')[0],
-          updatedAt: new Date().toISOString().split('T')[0],
-        };
-        updatedProjects = [...state.projects, activeProj];
-      }
-
-      const activeFig = state.figures.find((f) => activeProj?.figureIds.includes(f.id)) || state.figure;
+      const wsProjects = state.projects.filter((p) => p.workspaceId === wsId);
+      const activeProj = wsProjects[0] || null;
+      const activeFig = activeProj
+        ? state.figures.find((f) => activeProj.figureIds.includes(f.id)) || null
+        : null;
 
       return {
         ...state,
         activeWorkspaceId: wsId,
-        projects: updatedProjects,
-        activeProjectId: activeProj.id,
+        projects: state.projects,
+        activeProjectId: activeProj ? activeProj.id : null,
         figure: activeFig,
-        activeFigureId: activeFig.id,
+        activeFigureId: activeFig ? activeFig.id : null,
         account: {
           ...state.account,
           activeWorkspaceId: wsId,
@@ -67,32 +54,64 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         name: command.payload.name.trim() || 'New Team Workspace',
         ownerId: state.account.id,
         memberIds: [state.account.id],
-        sharedDatasetIds: ['palmer-penguins'],
+        sharedDatasetIds: [],
         projectIds: [],
       };
-
-      const newProj = {
-        id: `proj-${Date.now()}`,
-        workspaceId: newWs.id,
-        name: 'Initial Research Project',
-        description: 'Collaborative scientific multi-panel figure collection.',
-        datasetIds: ['palmer-penguins'],
-        figureIds: [DEFAULT_MULTIPANEL_FIGURE.id],
-        createdAt: new Date().toISOString().split('T')[0],
-        updatedAt: new Date().toISOString().split('T')[0],
-      };
-
-      newWs.projectIds.push(newProj.id);
 
       return {
         ...state,
         workspaces: [...state.workspaces, newWs],
         activeWorkspaceId: newWs.id,
-        projects: [...state.projects, newProj],
-        activeProjectId: newProj.id,
+        activeProjectId: null,
+        figure: null,
+        activeFigureId: null,
         account: {
           ...state.account,
           activeWorkspaceId: newWs.id,
+        },
+      };
+    }
+
+    case 'DELETE_WORKSPACE': {
+      const wsIdToDelete = command.payload;
+      const remainingWorkspaces = state.workspaces.filter((w) => w.id !== wsIdToDelete);
+
+      let nextWsList = remainingWorkspaces;
+      let nextWsId = state.activeWorkspaceId;
+
+      if (remainingWorkspaces.length === 0) {
+        const freshWs = {
+          id: `ws-${Date.now()}`,
+          name: 'Main Workspace',
+          ownerId: state.account.id,
+          memberIds: [state.account.id],
+          sharedDatasetIds: [],
+          projectIds: [],
+        };
+        nextWsList = [freshWs];
+        nextWsId = freshWs.id;
+      } else if (state.activeWorkspaceId === wsIdToDelete) {
+        nextWsId = remainingWorkspaces[0].id;
+      }
+
+      // Remove projects and figures belonging to deleted workspace
+      const remainingProjects = state.projects.filter((p) => p.workspaceId !== wsIdToDelete);
+      const activeProj = remainingProjects.find((p) => p.workspaceId === nextWsId) || null;
+      const activeFig = activeProj
+        ? state.figures.find((f) => activeProj.figureIds.includes(f.id)) || null
+        : null;
+
+      return {
+        ...state,
+        workspaces: nextWsList,
+        activeWorkspaceId: nextWsId,
+        projects: remainingProjects,
+        activeProjectId: activeProj ? activeProj.id : null,
+        figure: activeFig,
+        activeFigureId: activeFig ? activeFig.id : null,
+        account: {
+          ...state.account,
+          activeWorkspaceId: nextWsId,
         },
       };
     }
@@ -208,25 +227,25 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
     }
 
     case 'DELETE_FIGURE': {
-      const activeProj = state.projects.find((p) => p.id === state.activeProjectId);
-      if (!activeProj) return state;
+      const targetFigId = command.payload;
+      const filteredFigs = state.figures.filter((f) => f.id !== targetFigId);
 
-      const filteredFigs = state.figures.filter((f) => f.id !== command.payload);
-      const updatedProjects = state.projects.map((p) =>
-        p.id === state.activeProjectId
-          ? { ...p, figureIds: p.figureIds.filter((id) => id !== command.payload) }
-          : p
-      );
+      const updatedProjects = state.projects.map((p) => ({
+        ...p,
+        figureIds: p.figureIds.filter((id) => id !== targetFigId),
+      }));
 
-      const remainingFigId = activeProj.figureIds.find((id) => id !== command.payload);
-      const nextFig = remainingFigId ? filteredFigs.find((f) => f.id === remainingFigId) || filteredFigs[0] || null : null;
+      const activeProj = updatedProjects.find((p) => p.id === state.activeProjectId);
+      const remainingFig = activeProj
+        ? filteredFigs.find((f) => activeProj.figureIds.includes(f.id)) || filteredFigs[0] || null
+        : filteredFigs[0] || null;
 
       return {
         ...state,
         projects: updatedProjects,
         figures: filteredFigs,
-        figure: nextFig,
-        activeFigureId: nextFig ? nextFig.id : null,
+        figure: remainingFig,
+        activeFigureId: remainingFig ? remainingFig.id : null,
       };
     }
 
@@ -307,10 +326,24 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
       const payload: any = (command as any).payload;
       const datasetId = typeof payload === 'string' ? payload : payload?.id;
       const datasets = state.datasets.filter((d) => d.id !== datasetId);
+      const updatedProjects = state.projects.map((p) => ({
+        ...p,
+        datasetIds: p.datasetIds.filter((id) => id !== datasetId),
+      }));
+      const updatedWorkspaces = state.workspaces.map((w) => ({
+        ...w,
+        sharedDatasetIds: w.sharedDatasetIds.filter((id) => id !== datasetId),
+      }));
       const selectedDatasetId = state.selectedDatasetId === datasetId
         ? datasets[0]?.id || ''
         : state.selectedDatasetId;
-      return { ...state, datasets, selectedDatasetId };
+      return {
+        ...state,
+        datasets,
+        projects: updatedProjects,
+        workspaces: updatedWorkspaces,
+        selectedDatasetId,
+      };
     }
 
 

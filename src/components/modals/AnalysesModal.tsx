@@ -114,7 +114,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <Calculator className="w-4 h-4" />
             </div>
             <div>
@@ -167,7 +167,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
                     <Card className="bg-muted/50">
                       <CardContent className="p-3">
                         <span className="text-[10px] text-muted-foreground uppercase font-bold block">Heterogeneity (I²)</span>
-                        <span className={`text-lg font-mono font-bold ${metaResult.heterogeneity.iSquared > 50 ? 'text-amber-500' : 'text-emerald-600'}`}>{metaResult.heterogeneity.iSquared.toFixed(1)}%</span>
+                        <span className={`text-lg font-mono font-bold ${metaResult.heterogeneity.iSquared > 50 ? 'text-amber-500' : 'text-primary'}`}>{metaResult.heterogeneity.iSquared.toFixed(1)}%</span>
                         <span className="text-[10px] text-muted-foreground block">Q = {metaResult.heterogeneity.qStatistic.toFixed(2)} (p={metaResult.heterogeneity.pValue.toFixed(3)})</span>
                       </CardContent>
                     </Card>
@@ -214,7 +214,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
                       </div>
                       <div>
                         <span className="text-muted-foreground block text-[10px]">p-value</span>
-                        <span className={`font-bold ${biasStats.hasBiasRisk ? 'text-amber-500' : 'text-emerald-600'}`}>
+                        <span className={`font-bold ${biasStats.hasBiasRisk ? 'text-amber-500' : 'text-primary'}`}>
                           {biasStats.eggerPVal}
                         </span>
                       </div>
@@ -263,7 +263,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
                                   r === 1
                                     ? 'text-muted-foreground'
                                     : isHigh
-                                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold'
+                                    ? 'bg-primary/10 text-primary font-bold'
                                     : 'text-foreground'
                                 }`}
                               >

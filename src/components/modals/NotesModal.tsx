@@ -85,7 +85,7 @@ ${figure.panels
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <FileText className="w-4 h-4" />
             </div>
             <div>
@@ -100,7 +100,7 @@ ${figure.panels
             <span className="text-xs font-semibold text-muted-foreground">Markdown Methodological Notes</span>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={handleCopy} className="text-xs h-8">
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600 mr-1.5" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
+                {copied ? <Check className="w-3.5 h-3.5 text-primary mr-1.5" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
                 {copied ? 'Copied' : 'Copy'}
               </Button>
               <Button size="sm" variant="outline" onClick={handleExportMarkdown} className="text-xs h-8">

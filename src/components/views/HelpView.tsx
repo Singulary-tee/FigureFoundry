@@ -8,7 +8,9 @@ import {
   Sparkles,
   BookOpen,
   Keyboard,
+  Info,
 } from 'lucide-react';
+import { BUILD_IDENTIFIER, BUILD_COMMIT } from '../../version';
 
 interface HelpViewProps {
   onNavigate: (view: 'figures' | 'dashboard' | 'data' | 'analyses' | 'notes' | 'settings' | 'help') => void;
@@ -34,26 +36,10 @@ export const HelpView: React.FC<HelpViewProps> = ({ onNavigate }) => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#e4e4e7] dark:border-[#27272a] min-w-0">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs text-[#71717a] dark:text-[#a1a1aa] font-mono truncate">
-                FigureFoundry Reference Guide
-              </span>
-            </div>
             <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] dark:text-[#f4f4f5] tracking-tight truncate">
               Help, Shortcuts & Guides
             </h1>
-            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-0.5 line-clamp-2">
-              Comprehensive guidelines for multi-panel composition and WebMCP integration
-            </p>
           </div>
-
-          <button
-            onClick={() => onNavigate('figures')}
-            className="px-4 py-2 bg-[#24b47e] hover:bg-[#1f9d6e] text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 cursor-pointer shadow-xs whitespace-nowrap shrink-0 self-start sm:self-auto"
-          >
-            <span>Back to Canvas</span>
-            <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-          </button>
         </div>
 
         {/* Keyboard Shortcuts Grid */}
@@ -110,6 +96,29 @@ export const HelpView: React.FC<HelpViewProps> = ({ onNavigate }) => {
               </strong>
               Displays grouped comparative series with error bars and mean values across treatment arms or cohorts.
             </div>
+          </div>
+        </div>
+
+        {/* System Diagnostics & About */}
+        <div className="p-5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-[#24b47e]" />
+              <h2 className="text-sm font-bold text-[#0f172a] dark:text-[#f4f4f5]">
+                System Diagnostics & Release
+              </h2>
+            </div>
+            <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[#24b47e]/10 text-[#24b47e] font-bold border border-[#24b47e]/20">
+              {BUILD_IDENTIFIER}
+            </span>
+          </div>
+          <div className="text-xs text-[#71717a] space-y-1">
+            <p>
+              Release Build: <code className="font-mono text-[#0f172a] dark:text-[#f4f4f5] font-semibold">{BUILD_IDENTIFIER}</code> (Commit SHA: {BUILD_COMMIT})
+            </p>
+            <p>
+              Target Client: FigureFoundry Multi-Panel Scientific Visualizer
+            </p>
           </div>
         </div>
       </div>

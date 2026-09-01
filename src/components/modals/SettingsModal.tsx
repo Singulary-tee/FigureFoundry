@@ -46,7 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <Settings className="w-4 h-4" />
             </div>
             <div>
@@ -65,21 +65,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="grid grid-cols-3 gap-2">
               <Card
                 onClick={() => handlePreset(1200, 800)}
-                className="p-2.5 cursor-pointer hover:border-emerald-500/50 bg-muted/40 transition-colors"
+                className="p-2.5 cursor-pointer hover:border-primary/50 bg-muted/40 transition-colors"
               >
                 <span className="font-bold block text-foreground">Nature 2-Col</span>
                 <span className="text-[10px] text-muted-foreground">1200 × 800 px</span>
               </Card>
               <Card
                 onClick={() => handlePreset(800, 600)}
-                className="p-2.5 cursor-pointer hover:border-emerald-500/50 bg-muted/40 transition-colors"
+                className="p-2.5 cursor-pointer hover:border-primary/50 bg-muted/40 transition-colors"
               >
                 <span className="font-bold block text-foreground">Cell 1.5-Col</span>
                 <span className="text-[10px] text-muted-foreground">800 × 600 px</span>
               </Card>
               <Card
                 onClick={() => handlePreset(1400, 900)}
-                className="p-2.5 cursor-pointer hover:border-emerald-500/50 bg-muted/40 transition-colors"
+                className="p-2.5 cursor-pointer hover:border-primary/50 bg-muted/40 transition-colors"
               >
                 <span className="font-bold block text-foreground">Lancet Full</span>
                 <span className="text-[10px] text-muted-foreground">1400 × 900 px</span>

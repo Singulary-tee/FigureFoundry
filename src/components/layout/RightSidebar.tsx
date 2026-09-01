@@ -16,6 +16,8 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import { SidebarSeparator } from './SidebarSeparator';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
+import { Button } from '../ui/button';
 import {
   MultiPanelFigure,
   Panel,
@@ -440,71 +442,28 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     onUpdatePanelSpec(selectedPanel.id, { ...spec });
   };
 
-  return (
-    <div className="flex shrink-0 z-30 h-full">
-      {onToggleCollapse && (
-        <SidebarSeparator side="right" isCollapsed={false} onToggle={onToggleCollapse} />
-      )}
-      <aside
-        className={`bg-white dark:bg-[#121212] flex flex-col justify-between select-none shrink-0 z-30 overflow-hidden transition-all h-full ${
-          isOpenMobile
-            ? 'fixed inset-0 top-14 z-50 w-full md:relative md:inset-auto md:w-80 md:z-30'
-            : 'hidden md:flex md:w-80'
-        }`}
-      >
-      {/* Mobile Top Close Header */}
-      {onCloseMobile && (
-        <div className="md:hidden flex items-center justify-between px-4 py-2.5 bg-[#f8f9fa] dark:bg-[#18181b] border-b border-[#e4e4e7] dark:border-[#27272a] shrink-0">
-          <span className="font-bold text-xs text-[#0f172a] dark:text-[#f4f4f5]">
-            Inspector: {selectedPanel?.label || 'Panel Properties'}
-          </span>
-          <button
-            onClick={onCloseMobile}
-            className="px-3 py-1 bg-[#24b47e] text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1 cursor-pointer"
-          >
-            <span>Done (Show Canvas)</span>
-          </button>
-        </div>
-      )}
-
+  const sidebarContent = (
+    <aside className="bg-white dark:bg-[#121212] flex flex-col justify-between select-none shrink-0 overflow-hidden w-full h-full">
       <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
-        {/* Top Navigation Tabs */}
-        <div className="flex items-center border-b border-[#e4e4e7] dark:border-[#27272a] px-3 shrink-0">
-          <button
-            onClick={() => setActiveTab('design')}
-            className={`flex-1 py-3 text-xs font-semibold text-center border-b-2 transition-all cursor-pointer ${
-              activeTab === 'design'
-                ? 'border-[#24b47e] text-[#24b47e]'
-                : 'border-transparent text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5]'
-            }`}
-          >
-            Design
-          </button>
-          <button
-            onClick={() => setActiveTab('data')}
-            className={`flex-1 py-3 text-xs font-semibold text-center border-b-2 transition-all cursor-pointer ${
-              activeTab === 'data'
-                ? 'border-[#24b47e] text-[#24b47e]'
-                : 'border-transparent text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5]'
-            }`}
-          >
-            Data
-          </button>
-          <button
-            onClick={() => setActiveTab('export')}
-            className={`flex-1 py-3 text-xs font-semibold text-center border-b-2 transition-all cursor-pointer ${
-              activeTab === 'export'
-                ? 'border-[#24b47e] text-[#24b47e]'
-                : 'border-transparent text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5]'
-            }`}
-          >
-            Export
-          </button>
-        </div>
+        <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as 'design' | 'data' | 'export')} className="w-full flex-1 flex flex-col">
+          {/* Top Navigation Tabs */}
+          <div className="border-b border-[#e4e4e7] dark:border-[#27272a] px-3 py-2 shrink-0">
+            <TabsList className="w-full grid grid-cols-3 bg-[#f4f4f5] dark:bg-[#18181b] p-0.5 h-8">
+              <TabsTrigger value="design" className="text-xs font-semibold data-[state=active]:bg-white dark:data-[state=active]:bg-[#27272a] data-[state=active]:text-[#24b47e]">
+                Design
+              </TabsTrigger>
+              <TabsTrigger value="data" className="text-xs font-semibold data-[state=active]:bg-white dark:data-[state=active]:bg-[#27272a] data-[state=active]:text-[#24b47e]">
+                Data
+              </TabsTrigger>
+              <TabsTrigger value="export" className="text-xs font-semibold data-[state=active]:bg-white dark:data-[state=active]:bg-[#27272a] data-[state=active]:text-[#24b47e]">
+                Export
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-        {/* Tab 1: Design Inspector */}
-        {activeTab === 'design' && (
-          <div className="p-4 space-y-4">
+          {/* Tab 1: Design Inspector */}
+          <TabsContent value="design" className="mt-0 flex-1">
+            <div className="p-4 space-y-4">
             {/* Plot section */}
             <div className="border-b border-[#e4e4e7] dark:border-[#27272a] pb-4">
               <button
@@ -1028,10 +987,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               )}
             </div>
           </div>
-        )}
+        </TabsContent>
 
         {/* Tab 2: Interactive Data Grid with Real Meta-Analysis Computation */}
-        {activeTab === 'data' && (
+        <TabsContent value="data" className="mt-0 flex-1">
           <div className="p-4 space-y-4">
             {spec.kind === 'forest-plot' && (
               <>
@@ -1560,10 +1519,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             )}
 
           </div>
-        )}
+        </TabsContent>
 
         {/* Tab 3: Export Tab */}
-        {activeTab === 'export' && (
+        <TabsContent value="export" className="mt-0 flex-1">
           <div className="p-4 space-y-4">
             <div>
               <div className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5] mb-2">
@@ -1616,7 +1575,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             </div>
           </div>
-        )}
+        </TabsContent>
+        </Tabs>
       </div>
 
       {/* Save As Theme Big Button at Bottom of Sidebar */}
@@ -1629,6 +1589,43 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         </button>
       </div>
     </aside>
-  </div>
-);
+  );
+
+  return (
+    <>
+      {/* Desktop Right Sidebar */}
+      <div className="hidden md:flex shrink-0 z-30 h-full">
+        {onToggleCollapse && (
+          <SidebarSeparator side="right" isCollapsed={isCollapsed} onToggle={onToggleCollapse} />
+        )}
+        {!isCollapsed && (
+          <div className="w-80 h-full border-l border-[#e4e4e7] dark:border-[#27272a]">
+            {sidebarContent}
+          </div>
+        )}
+      </div>
+
+      {/* Mobile Right Sidebar Sheet */}
+      {isOpenMobile && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col bg-white dark:bg-[#121212]">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-[#f8f9fa] dark:bg-[#18181b] border-b border-[#e4e4e7] dark:border-[#27272a] shrink-0">
+            <span className="font-bold text-xs text-[#0f172a] dark:text-[#f4f4f5]">
+              Inspector: {selectedPanel?.label || 'Panel Properties'}
+            </span>
+            {onCloseMobile && (
+              <button
+                onClick={onCloseMobile}
+                className="px-3 py-1 bg-[#24b47e] text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1 cursor-pointer"
+              >
+                <span>Done</span>
+              </button>
+            )}
+          </div>
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
+  );
 };
