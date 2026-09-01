@@ -346,6 +346,7 @@ const PENGUIN_RECORDS = [
   { species: "Gentoo", island: "Biscoe", bill_length_mm: 45.2, bill_depth_mm: 14.8, flipper_length_mm: 212, body_mass_g: 5200, sex: "female" },
   { species: "Gentoo", island: "Biscoe", bill_length_mm: 49.9, bill_depth_mm: 16.1, flipper_length_mm: 213, body_mass_g: 5400, sex: "male" },
 
+];
 
 const GAPMINDER_RECORDS = [
   { country: 'Australia', continent: 'Oceania', year: 2007, lifeExp: 81.235, pop: 20434176, gdpPercap: 34435.37 },
