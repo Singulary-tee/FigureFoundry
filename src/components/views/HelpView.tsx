@@ -105,9 +105,9 @@ export const HelpView: React.FC<HelpViewProps> = ({ onNavigate }) => {
             <h2 className="text-sm font-bold">WebMCP Agent Guide</h2>
           </div>
           <div className="text-xs text-[#71717a] leading-relaxed space-y-3">
-            <p>Use the WebMCP panel to ask the agent to inspect your active dataset, propose a chart revision, and apply it after the native confirmation step.</p>
+            <p>WebMCP exposes the tools relevant to the page you are viewing. In the figure editor, an agent can inspect the workspace and propose a forest, funnel, grouped-bar, caption, or Vega chart revision; applying any change pauses for native human confirmation.</p>
             <p className="p-3 rounded-lg bg-[#f8f9fa] dark:bg-[#121212] font-mono text-[11px] text-[#0f172a] dark:text-[#f4f4f5]">“Inspect my dataset, then propose a comparison of mean body mass by species colored by island.”</p>
-            <p><strong>Safety boundary:</strong> the agent can modify only the panel marked Agent-editable. Dataset values remain editable by humans, the proposal is validated before application, and each applied revision is recorded in provenance.</p>
+            <p><strong>Safety boundary:</strong> proposals never mutate the canvas. Dataset values remain editable by humans, every applied figure change requires your confirmation, and each applied revision is recorded in provenance.</p>
           </div>
         </div>
 

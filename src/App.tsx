@@ -47,6 +47,7 @@ import { HelpView } from './components/views/HelpView';
 import { ProvenanceDrawer } from './components/ProvenanceDrawer';
 import { WebMcpDevPanel } from './components/WebMcpDevPanel';
 import { Sliders } from 'lucide-react';
+import { saveDomainState } from './packages/domain/persistence';
 
 export default function App() {
   // ---
@@ -87,6 +88,7 @@ export default function App() {
     setActiveThemeId(loadedThemeId);
     setHistory([loadedFig]);
     setHistoryIndex(0);
+    globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: loadedFig as any });
   }, []);
 
   // Sync dark class on root document
@@ -128,6 +130,7 @@ export default function App() {
           return nextHist;
         });
         setHistoryIndex((prevIdx) => Math.min(prevIdx + 1, 29));
+        globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: next as any });
         return next;
       });
     },
@@ -718,7 +721,18 @@ export default function App() {
   };
 
   return (
-    <WebMcpProvider currentState={figureState} dispatchDomainAction={customDispatch}>
+    <WebMcpProvider
+      currentState={{
+        ...figureState,
+        activeView: currentView,
+        activeFigureId: domainState.activeFigureId,
+        panelIds: figure?.panels.map((panel) => panel.id) || [],
+        selectedPanelId,
+        selectedPanel: figure?.panels.find((panel) => panel.id === selectedPanelId) || null,
+        datasets: domainState.datasets,
+      }}
+      dispatchDomainAction={customDispatch}
+    >
       <div className="flex flex-col h-screen w-screen bg-[#f8f9fa] dark:bg-[#121212] text-[#18181b] dark:text-[#EDEDED] font-sans antialiased overflow-hidden select-none transition-colors">
         {/* Top Navigation Bar */}
         {currentView === 'figures' && figure ? (

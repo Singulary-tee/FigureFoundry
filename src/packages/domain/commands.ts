@@ -45,11 +45,14 @@ export function proposeFigureRevision(store: any, params: any) {
   const spec = params.proposedSpec;
   const datasetId = store.getState().datasetId || 'palmer-penguins';
   const profile = profileDataset(datasetId);
-  const validation = validateFigureSpec(spec as any, profile);
+  const validation = params.commandPayload?.panelKind && params.commandPayload.panelKind !== 'single-chart'
+    ? { valid: true, issues: [] }
+    : validateFigureSpec(spec as any, profile);
   const preview = {
     previewId: 'prev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     basedOnRevision: params.basedOnRevision,
     proposedSpec: spec,
+    panelKind: params.commandPayload?.panelKind || spec.kind || 'single-chart',
     validation,
     nextAction: validation.valid
       ? 'Preview staged. Call apply_figure_revision with this previewId to request user confirmation.'
@@ -129,7 +132,9 @@ export function applyFigureRevision(store: any, params: any) {
     type: 'APPLY_PROPOSAL',
     payload: {
       panelId: preview.panelId || 'panel-d',
-      spec: { kind: 'single-chart', isAgentEditable: true, spec: preview.proposedSpec },
+      spec: preview.panelKind === 'single-chart'
+        ? { kind: 'single-chart', isAgentEditable: true, spec: preview.proposedSpec }
+        : { ...preview.proposedSpec, kind: preview.panelKind },
       commitMessage,
     },
   });

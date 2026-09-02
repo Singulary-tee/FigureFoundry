@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { WebMcpToolDefinition, WebMcpCallLog, FigureState } from '../../types';
 import { FigureDomainAction } from '../domain/reducer';
 import { WebMcpServer } from './server';
-import { getDatasetAwareTools, BASE_WEBMCP_TOOLS } from './tools';
+import { getDatasetAwareTools, getPageAwareTools, BASE_WEBMCP_TOOLS } from './tools';
 import { initWebMcpPolyfill, isNativeToolsPolicyAllowed } from './polyfill';
 import { setupPostMessageTransport } from './transport';
 import { WebMcpContextValue, WebMcpExecutionState } from './types';
@@ -44,12 +44,20 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
   const stateRef = useRef(currentState);
   stateRef.current = currentState;
   const server = useMemo(
-    () => new WebMcpServer((a) => dispatchRef.current(a), () => stateRef.current),
+    () => new WebMcpServer(
+      (a) => dispatchRef.current(a),
+      () => stateRef.current,
+      undefined,
+      () => (stateRef.current as any).panelIds || []
+    ),
     []
   );
 
   const registeredTools = useMemo(() => {
-    const datasetTools = getDatasetAwareTools(currentState.datasetId, currentState.currentRevision);
+    const datasetTools = [
+      ...getDatasetAwareTools(currentState.datasetId, currentState.currentRevision),
+      ...getPageAwareTools((currentState as any).activeView || 'figures'),
+    ];
     const customList = Array.from(customToolsRef.current.values()).map(
       (t: { definition: WebMcpToolDefinition; executeFn?: (args: any) => Promise<any> }) => t.definition
     );
@@ -59,7 +67,7 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
     customList.forEach(t => toolMap.set(t.name, t));
     
     return Array.from(toolMap.values());
-  }, [currentState.datasetId, currentState.currentRevision]);
+  }, [currentState.datasetId, currentState.currentRevision, (currentState as any).activeView]);
 
   const executeTool = useCallback(
     async (
@@ -180,6 +188,16 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
       if (!isNative && nativeRegistrationRef.current.context !== modelContext) {
         nativeRegistrationRef.current = { context: modelContext, names: new Set() };
       }
+      const desiredNames = new Set(registeredTools.map((tool) => tool.name));
+      nativeRegistrationRef.current.names.forEach((name) => {
+        if (desiredNames.has(name)) return;
+        try {
+          modelContext.unregisterTool?.(name);
+        } catch {
+          // Hosts without unregister support will replace the page context on navigation.
+        }
+        nativeRegistrationRef.current.names.delete(name);
+      });
       registeredTools.forEach(tool => {
         if (nativeRegistrationRef.current.names.has(tool.name)) return;
         try {

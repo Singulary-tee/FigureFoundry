@@ -47,7 +47,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
   {
     name: 'inspect_figure_workspace',
     title: 'Inspect current figure workspace state',
-    description: 'Returns the current session state: which panel is agent-editable (agentEditablePanelId), scientific question, declared figure intent, revision number, the currently applied figure spec (if any), the most recent validation result, and a count of provenance events. Read-only. Does NOT return dataset field metadata — call inspect_dataset_fields separately for that. Call this first in a session, or after apply_figure_revision, to know what is currently on screen and which panel target to use before proposing a change.',
+    description: 'Returns the current page and figure state, including every panelId available for an agent proposal. Read-only. Call this first in a session or after applying a revision.',
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: false
@@ -62,8 +62,9 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
       properties: {
         agentEditablePanelId: {
           type: 'string',
-          description: 'The panelId of the panel currently flagged isAgentEditable: true. Use this as targetPanelId in propose_figure_revision and apply_figure_revision.'
+          description: 'Legacy alias for the first available panelId.'
         },
+        editablePanelIds: { type: 'array', items: { type: 'string' }, description: 'All panels in the active figure. Any one may be targeted, with human approval required at apply time.' },
         datasetId: { type: 'string' },
         scientificQuestion: { type: 'string' },
         figureIntent: {
@@ -97,7 +98,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         },
         provenanceEventCount: { type: 'integer', minimum: 0 }
       },
-      required: ['agentEditablePanelId', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
+      required: ['agentEditablePanelId', 'editablePanelIds', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
       additionalProperties: false
     }
   },
@@ -115,7 +116,16 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
       properties: {
         targetPanelId: {
           type: 'string',
-          description: 'Must equal the panelId of the panel currently flagged isAgentEditable: true. Calls targeting any other panelId are rejected — the agent may only ever operate the one designated agent-editable panel.'
+          description: 'The panelId from inspect_figure_workspace to revise. Any panel in the active figure may be proposed; applying always requests native human confirmation.'
+        },
+        panelKind: {
+          type: 'string',
+          enum: ['forest-plot', 'funnel-plot', 'grouped-bar', 'subgroup-analysis', 'text-caption', 'single-chart'],
+          description: 'Optional panel renderer to create or replace. Use panelSpec for non-Vega scientific panels.'
+        },
+        panelSpec: {
+          type: 'object',
+          description: 'Optional complete panel specification for forest, funnel, grouped-bar, subgroup, or caption panels.'
         },
         figureIntent: {
           type: 'string',
@@ -180,7 +190,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
           description: 'Method for encoding data uncertainty or null/none.'
         }
       },
-      required: ['targetPanelId', 'figureIntent', 'mark', 'encoding', 'showsRawObservations', 'uncertaintyEncoding']
+      required: ['targetPanelId']
     },
     outputSchema: {
       type: 'object',
@@ -215,7 +225,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
       properties: {
         targetPanelId: {
           type: 'string',
-          description: 'Must equal the panelId of the panel currently flagged isAgentEditable: true. Calls targeting any other panelId are rejected — the agent may only ever operate the one designated agent-editable panel.'
+          description: 'PanelId from inspect_figure_workspace. Any panel type may be proposed; application requires native human confirmation.'
         },
         previewId: { type: 'string', description: 'Must match a previewId returned by propose_figure_revision.' },
         basedOnRevision: { type: 'integer', minimum: 0, description: 'Must equal the project current revision.' }
@@ -269,4 +279,36 @@ export function getDatasetAwareTools(datasetId: string, currentRevision?: number
 
     return tool;
   });
+}
+
+export function getPageAwareTools(page: string): WebMcpToolDefinition[] {
+  const definitions: WebMcpToolDefinition[] = [];
+  if (page === 'dashboard') {
+    definitions.push({
+      name: 'inspect_figures', title: 'Inspect figures',
+      description: 'Lists figures in the active project so the agent can help the user choose a canvas.',
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      outputSchema: { type: 'object' }
+    });
+  }
+  if (page === 'data') {
+    definitions.push({
+      name: 'inspect_dataset_catalog', title: 'Inspect dataset catalog',
+      description: 'Lists datasets currently available in the active project or workspace.',
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      outputSchema: { type: 'object' }
+    });
+  }
+  if (page === 'figures') {
+    definitions.push({
+      name: 'inspect_selected_panel', title: 'Inspect selected panel',
+      description: 'Returns the selected panel kind, label, and specification before an agent proposes a change.',
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      outputSchema: { type: 'object' }
+    });
+  }
+  return definitions;
 }

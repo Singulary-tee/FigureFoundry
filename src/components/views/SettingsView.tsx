@@ -196,7 +196,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <div className="text-xs text-[#71717a] space-y-2 leading-relaxed">
             <p>
-              • <strong>Agent Scope:</strong> The AI agent operates strictly through four WebMCP tools (<code>inspect_dataset_fields</code>, <code>inspect_figure_workspace</code>, <code>propose_figure_revision</code>, <code>apply_figure_revision</code>) and can modify exactly ONE designated agent-editable panel.
+              • <strong>Agent Scope:</strong> WebMCP tools are exposed progressively for the page you are viewing. On a figure page, the agent can propose changes to any panel type; applying any proposal always requires native human confirmation.
             </p>
             <p>
               • <strong>Optimistic Concurrency Control (OCC):</strong> Revisions require matching base revision numbers to prevent race conditions during figure editing.
