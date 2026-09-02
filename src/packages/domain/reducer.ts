@@ -4,6 +4,8 @@ import { recordRevision } from '../provenance/ledger';
 import { DEFAULT_MULTIPANEL_FIGURE, createNewFigure } from '../multipanel/defaultFigure';
 import { saveFigureToStorage, saveActiveThemeId } from '../multipanel/storage';
 import { registerRuntimeDataset } from '../data-model/profiler';
+import { unregisterRuntimeDataset } from '../data-model/profiler';
+import { saveDomainState } from './persistence';
 
 export function domainReducer(state: DomainState, command: DomainCommand): DomainState {
   switch (command.type) {
@@ -321,13 +323,15 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         );
       }
 
-      return {
+      const nextState = {
         ...state,
         datasets,
         projects: updatedProjects,
         workspaces: updatedWorkspaces,
         selectedDatasetId: dataset.id,
       };
+      saveDomainState(nextState);
+      return nextState;
     }
 
     case 'TOGGLE_DATASET_SCOPE': {
@@ -352,11 +356,13 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         return w;
       });
 
-      return {
+      const nextState = {
         ...state,
         projects: updatedProjects,
         workspaces: updatedWorkspaces,
       };
+      saveDomainState(nextState);
+      return nextState;
     }
 
     case 'UPDATE_DATASET': {
@@ -364,7 +370,9 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         if (d.id !== command.payload.id) return d;
         return { ...d, rows: command.payload.rows };
       });
-      return { ...state, datasets };
+      const nextState = { ...state, datasets };
+      saveDomainState(nextState);
+      return nextState;
     }
 
     case 'DELETE_DATASET': {
@@ -382,13 +390,16 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
       const selectedDatasetId = state.selectedDatasetId === datasetId
         ? datasets[0]?.id || ''
         : state.selectedDatasetId;
-      return {
+      const nextState = {
         ...state,
         datasets,
         projects: updatedProjects,
         workspaces: updatedWorkspaces,
         selectedDatasetId,
       };
+      unregisterRuntimeDataset(datasetId);
+      saveDomainState(nextState);
+      return nextState;
     }
 
 

@@ -12,18 +12,18 @@ export class WebMcpServer {
   private dispatchDomainAction: (action: FigureDomainAction) => any;
   private getState: () => FigureState;
   private store: FigureStore;
-  private getAgentEditablePanelId: () => string;
+  private getEditablePanelIds: () => string[];
 
   constructor(
     dispatch: (action: FigureDomainAction) => any,
     getState: () => FigureState,
     store: FigureStore = globalFigureStore,
-    getAgentEditablePanelId: () => string = () => 'panel-d'
+    getEditablePanelIds: () => string[] = () => []
   ) {
     this.dispatchDomainAction = dispatch;
     this.getState = getState;
     this.store = store;
-    this.getAgentEditablePanelId = getAgentEditablePanelId;
+    this.getEditablePanelIds = getEditablePanelIds;
   }
 
   public listTools(): WebMcpToolDefinition[] {
@@ -41,12 +41,21 @@ export class WebMcpServer {
   ): Promise<{ result: any; log: WebMcpCallLog }> {
     const startTime = performance.now();
     const currentState = this.getState();
-    const agentEditablePanelId = this.getAgentEditablePanelId();
+    const editablePanelIds = this.getEditablePanelIds();
     let result: any = null;
     let status: 'success' | 'error' | 'rejected' = 'success';
 
     try {
       switch (toolName) {
+        case 'inspect_figures':
+          result = { figures: (currentState as any).figures || [], activeFigureId: (currentState as any).activeFigureId || null };
+          break;
+        case 'inspect_dataset_catalog':
+          result = { datasets: (currentState as any).datasets || [], selectedDatasetId: currentState.datasetId };
+          break;
+        case 'inspect_selected_panel':
+          result = { panelId: (currentState as any).selectedPanelId || null, panel: (currentState as any).selectedPanel || null };
+          break;
         case 'inspect_dataset_fields': {
           const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
           result = {
@@ -79,7 +88,8 @@ export class WebMcpServer {
           }
 
           result = {
-            agentEditablePanelId,
+              agentEditablePanelId: editablePanelIds[0] || '',
+              editablePanelIds,
             datasetId: currentState.datasetId || 'palmer-penguins',
             scientificQuestion,
             figureIntent: currentState.spec?.figureIntent || 'comparison',
@@ -101,8 +111,7 @@ export class WebMcpServer {
         }
 
         case 'propose_figure_revision': {
-          // Validate targetPanelId against the single agent-editable panel
-          if (!inputArgs.targetPanelId || inputArgs.targetPanelId !== agentEditablePanelId) {
+          if (!inputArgs.targetPanelId || (editablePanelIds.length > 0 && !editablePanelIds.includes(inputArgs.targetPanelId))) {
             status = 'rejected';
             result = {
               valid: false,
@@ -110,14 +119,14 @@ export class WebMcpServer {
                 {
                   severity: 'blocking',
                   path: 'targetPanelId',
-                  message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not agent-editable. Only '${agentEditablePanelId}' is designated as agent-editable.`,
+                  message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not present in the active figure. Choose one of: ${editablePanelIds.join(', ')}.`,
                 },
               ],
             };
             break;
           }
 
-          const candidateSpec = {
+          const candidateSpec = inputArgs.panelSpec || {
             ...currentState.spec,
             title:
               inputArgs.title ||
@@ -146,14 +155,14 @@ export class WebMcpServer {
 
         case 'apply_figure_revision': {
           // 1. Validate targetPanelId
-          if (!inputArgs.targetPanelId || inputArgs.targetPanelId !== agentEditablePanelId) {
+          if (!inputArgs.targetPanelId || (editablePanelIds.length > 0 && !editablePanelIds.includes(inputArgs.targetPanelId))) {
             status = 'rejected';
             result = {
               status: 'rejected_unapproved',
               newRevision: currentState.currentRevision,
               appliedSpec: null,
               provenanceEventId: '',
-              message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not agent-editable. Only '${agentEditablePanelId}' is designated as agent-editable.`,
+              message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not present in the active figure. Choose one of: ${editablePanelIds.join(', ')}.`,
             } as ApplyResult;
             break;
           }
@@ -186,7 +195,7 @@ export class WebMcpServer {
           // 3. Native Browser Confirmation Gate (Invariant 3)
           let userConfirmed = false;
           const proposed = currentState.activePreview.proposedSpec;
-          const confirmMessage = `Apply proposed figure revision to ${agentEditablePanelId.toUpperCase()}?\n\nTitle: ${proposed.title || 'Untitled'}\nIntent: ${proposed.figureIntent} (${proposed.mark})\nX-Axis: ${proposed.encoding?.x?.field || 'N/A'}\nY-Axis: ${proposed.encoding?.y?.field || 'N/A'}\nRevision: Rev ${currentState.currentRevision} -> Rev ${currentState.currentRevision + 1}`;
+          const confirmMessage = `Apply proposed figure revision to ${inputArgs.targetPanelId.toUpperCase()}?\n\nTitle: ${proposed.title || 'Untitled'}\nType: ${currentState.activePreview.panelKind || 'single-chart'}\nRevision: Rev ${currentState.currentRevision} -> Rev ${currentState.currentRevision + 1}`;
 
           if (typeof window !== 'undefined') {
             if (typeof (window as any).requestUserInteraction === 'function') {

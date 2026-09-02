@@ -115,6 +115,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   }, [spec, activeDatasetId, datasetRecordVersion]);
 
   const chartFields = currentDatasetProfile?.fields || [];
+  const updateChartDataset = (datasetId: string) => {
+    if (spec?.kind !== 'single-chart') return;
+    onSelectDataset?.(datasetId);
+    onUpdatePanelSpec(selectedPanel.id, { ...spec, datasetId });
+  };
   const updateChartEncoding = (channel: 'x' | 'y' | 'color' | 'shape', field: string) => {
     if (spec?.kind !== 'single-chart') return;
     const current = ((spec as SingleChartSpec).spec || {}) as any;
@@ -537,7 +542,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                         <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Source Dataset</label>
                         <select
                           value={activeDatasetId}
-                          onChange={(e) => onSelectDataset?.(e.target.value)}
+                          onChange={(e) => updateChartDataset(e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
                         >
                           {(availableDatasets || []).map((dataset) => (
@@ -1407,7 +1412,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         {onSelectDataset && availableDatasets && availableDatasets.length > 0 && (
           <select
             value={activeDatasetId}
-            onChange={(e) => onSelectDataset(e.target.value)}
+            onChange={(e) => updateChartDataset(e.target.value)}
             className="text-[11px] font-semibold px-2 py-1 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-[#f4f4f5] dark:bg-[#18181b] text-[#0f172a] dark:text-[#f4f4f5]"
           >
             {availableDatasets.map((ds) => (

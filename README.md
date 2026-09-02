@@ -42,7 +42,7 @@ Expected tools, in order:
 3. `propose_figure_revision` — agent submits a candidate spec; a validation report and `previewId` come back.
 4. `apply_figure_revision` — agent calls this with the `previewId`; the browser pauses and shows a native confirmation prompt describing the proposed change.
 
-Expected visible result: after you confirm, the agent-editable panel's chart re-renders in place on the canvas with a brief highlight on that panel's frame. No other panel changes. No custom "Agent did X" banner appears anywhere — confirmation happens in the browser's own native prompt, not in page UI.
+Expected visible result: after you confirm, the targeted panel re-renders in place on the canvas with a brief highlight on that panel's frame. No other panel changes. No custom "Agent did X" banner appears anywhere — confirmation happens in the browser's own native prompt, not in page UI.
 
 Expected confirmation point: the native browser prompt triggered by `requestUserInteraction()` inside `apply_figure_revision`'s execution — not a modal built by this app.
 

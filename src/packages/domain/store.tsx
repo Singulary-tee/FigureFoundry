@@ -3,6 +3,7 @@ import { DomainState, INITIAL_DOMAIN_STATE, INITIAL_FIGURE_STATE } from './state
 import { DomainCommand } from './commands';
 import { domainReducer } from './reducer';
 import { FigureProject, ExportBundle } from '../../types';
+import { loadDomainState } from './persistence';
 
 export type StoreListener = (state: DomainState) => void;
 
@@ -35,7 +36,7 @@ export class DomainStore {
   }
 }
 
-export const globalDomainStore = new DomainStore();
+export const globalDomainStore = new DomainStore(loadDomainState());
 export type FigureStore = any;
 
 let cachedSnapshot: any = null;

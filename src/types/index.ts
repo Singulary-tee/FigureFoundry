@@ -92,6 +92,7 @@ export interface FigurePreview {
   createdAt: number;
   approvedInUI: boolean;
   actor: 'agent' | 'human';
+  panelKind?: string;
 }
 
 export interface ProvenanceEvent {
