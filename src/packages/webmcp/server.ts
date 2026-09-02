@@ -180,6 +180,20 @@ export class WebMcpServer {
             break;
           }
 
+          // A preview is bound to the panel it was proposed for; applying it
+          // to any other editable panel would corrupt that panel's spec.
+          if (currentState.activePreview.panelId && currentState.activePreview.panelId !== inputArgs.targetPanelId) {
+            status = 'rejected';
+            result = {
+              status: 'rejected_wrong_target',
+              newRevision: currentState.currentRevision,
+              appliedSpec: null,
+              provenanceEventId: '',
+              message: `Preview '${inputArgs.previewId}' was proposed for panel '${currentState.activePreview.panelId}' but apply was requested for '${inputArgs.targetPanelId}'. Re-propose with targetPanelId '${currentState.activePreview.panelId}'.`,
+            } as ApplyResult;
+            break;
+          }
+
           if (currentState.currentRevision !== inputArgs.basedOnRevision) {
             status = 'rejected';
             result = {

@@ -2,6 +2,8 @@
 
 FigureFoundry implements four primary WebMCP tools tailored for LLM consumption, bounded context budgets, and deterministic verification.
 
+**Page-aware supplementary tools.** Depending on the active view, `tools/list` may also expose one read-only context helper: `inspect_figures` (dashboard view), `inspect_dataset_catalog` (data view), or `inspect_selected_panel` (figure editor view). These are thin, read-only conveniences for the current page — the four primary tools below remain the authoritative surface for all inspection and mutation workflows, and only they can modify state.
+
 ---
 
 ## 1. `inspect_dataset_fields`

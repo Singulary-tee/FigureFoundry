@@ -95,7 +95,7 @@ const run = async () => {
   console.log(LINE);
   console.log('5. Single-target invariant');
   const pWrong = await propose();
-  const aWrong = await apply(pWrong?.previewId, pWrong?.basedOnRevision, 'panel-a');
+  const aWrong = await apply(pWrong?.previewId, pWrong?.basedOnRevision, editable === 'panel-a' ? 'panel-b' : 'panel-a');
   console.log('   apply to wrong panel:', JSON.stringify(aWrong?.status));
   const aUnknown = await apply('prev_does_not_exist', 1);
   console.log('   apply unknown preview:', JSON.stringify(aUnknown?.status));

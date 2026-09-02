@@ -235,7 +235,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     outputSchema: {
       type: 'object',
       properties: {
-        status: { type: 'string', enum: ['applied', 'rejected_stale', 'rejected_unapproved', 'rejected_unknown_preview', 'rejected_validation_failed'] },
+        status: { type: 'string', enum: ['applied', 'rejected_stale', 'rejected_unapproved', 'rejected_unknown_preview', 'rejected_wrong_target', 'rejected_validation_failed'] },
         newRevision: { type: 'integer', minimum: 0 },
         appliedSpec: { type: ['object', 'null'] },
         provenanceEventId: { type: 'string' },
