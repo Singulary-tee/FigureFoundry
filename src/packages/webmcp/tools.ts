@@ -60,11 +60,23 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     outputSchema: {
       type: 'object',
       properties: {
-        agentEditablePanelId: {
-          type: 'string',
-          description: 'Legacy alias for the first available panelId.'
+        targetPanelIds: { type: 'array', items: { type: 'string' }, description: 'Panels in the active figure that can be targeted by a revision proposal. Always inspect this fresh after the user changes figures.' },
+        selectedPanelId: { type: ['string', 'null'], description: 'The panel the user currently has selected, if any.' },
+        panels: {
+          type: 'array',
+          description: 'A compact map of panels in the active figure for choosing a proposal target.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              label: { type: 'string' },
+              kind: { type: 'string' },
+              title: { type: 'string' },
+            },
+            required: ['id', 'label', 'kind', 'title'],
+            additionalProperties: false,
+          },
         },
-        editablePanelIds: { type: 'array', items: { type: 'string' }, description: 'All panels in the active figure. Any one may be targeted, with human approval required at apply time.' },
         datasetId: { type: 'string' },
         scientificQuestion: { type: 'string' },
         figureIntent: {
@@ -98,7 +110,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         },
         provenanceEventCount: { type: 'integer', minimum: 0 }
       },
-      required: ['agentEditablePanelId', 'editablePanelIds', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
+      required: ['targetPanelIds', 'selectedPanelId', 'panels', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
       additionalProperties: false
     }
   },
@@ -116,7 +128,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
       properties: {
         targetPanelId: {
           type: 'string',
-          description: 'The panelId from inspect_figure_workspace to revise. Any panel in the active figure may be proposed; applying always requests native human confirmation.'
+          description: 'A panelId from the fresh targetPanelIds list returned by inspect_figure_workspace. Applying a proposal always requests native human confirmation.'
         },
         panelKind: {
           type: 'string',
@@ -225,7 +237,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
       properties: {
         targetPanelId: {
           type: 'string',
-          description: 'PanelId from inspect_figure_workspace. Any panel type may be proposed; application requires native human confirmation.'
+          description: 'The same panelId used when staging the preview. Application requires native human confirmation.'
         },
         previewId: { type: 'string', description: 'Must match a previewId returned by propose_figure_revision.' },
         basedOnRevision: { type: 'integer', minimum: 0, description: 'Must equal the project current revision.' }
@@ -235,7 +247,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     outputSchema: {
       type: 'object',
       properties: {
-        status: { type: 'string', enum: ['applied', 'rejected_stale', 'rejected_unapproved', 'rejected_unknown_preview', 'rejected_wrong_target', 'rejected_validation_failed'] },
+        status: { type: 'string', enum: ['applied', 'rejected_stale', 'rejected_unapproved', 'rejected_invalid_target', 'rejected_unknown_preview', 'rejected_wrong_target', 'rejected_validation_failed'] },
         newRevision: { type: 'integer', minimum: 0 },
         appliedSpec: { type: ['object', 'null'] },
         provenanceEventId: { type: 'string' },

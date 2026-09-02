@@ -518,7 +518,7 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
 export type FigureDomainAction = DomainCommand;
 
 export interface ApplyResult {
-  status: 'applied' | 'rejected_stale' | 'rejected_unknown_preview' | 'rejected_unapproved' | 'rejected_wrong_target';
+  status: 'applied' | 'rejected_stale' | 'rejected_unknown_preview' | 'rejected_unapproved' | 'rejected_invalid_target' | 'rejected_wrong_target';
   newRevision: number;
   appliedSpec: any;
   provenanceEventId: string;

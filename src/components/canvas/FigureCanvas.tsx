@@ -16,6 +16,7 @@ import { CaptionKonva } from './CaptionKonva';
 import { SingleChartKonva } from './SingleChartKonva';
 import { ManualItemsKonva } from './ManualItemsKonva';
 import { useMobileCanvasTouch } from './useMobileCanvasTouch';
+import { snapPanelFrame } from '../../packages/multipanel/layout';
 import { Copy, Trash2, Lock, Maximize2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
 interface FigureCanvasProps {
@@ -39,6 +40,7 @@ interface FigureCanvasProps {
   stageRef: React.RefObject<Konva.Stage | null>;
   datasetId?: string;
   isPendingApproval?: boolean;
+  layoutTransitionKey?: number;
 }
 
 export const FigureCanvas: React.FC<FigureCanvasProps> = ({
@@ -62,6 +64,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
   stageRef,
   datasetId,
   isPendingApproval,
+  layoutTransitionKey = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -69,6 +72,51 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPos, setLastPanPos] = useState({ x: 0, y: 0 });
   const hasAutoFittedRef = useRef(false);
+  const lastLayoutTransitionKey = useRef(layoutTransitionKey);
+  const displayedFramesRef = useRef<Record<string, { x: number; y: number; width: number; height: number }>>(
+    Object.fromEntries(figure.panels.map((panel) => [panel.id, panel.frame])),
+  );
+  const [displayedFrames, setDisplayedFrames] = useState(displayedFramesRef.current);
+
+  const updateDisplayedFrames = useCallback((frames: Record<string, { x: number; y: number; width: number; height: number }>) => {
+    displayedFramesRef.current = frames;
+    setDisplayedFrames(frames);
+  }, []);
+
+  useEffect(() => {
+    const targetFrames = Object.fromEntries(figure.panels.map((panel) => [panel.id, panel.frame]));
+    if (layoutTransitionKey === lastLayoutTransitionKey.current) {
+      updateDisplayedFrames(targetFrames);
+      return;
+    }
+
+    lastLayoutTransitionKey.current = layoutTransitionKey;
+    const startFrames = displayedFramesRef.current;
+    const startedAt = performance.now();
+    let animationFrame = 0;
+
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / 260);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const nextFrames = Object.fromEntries(figure.panels.map((panel) => {
+        const start = startFrames[panel.id] || panel.frame;
+        const target = targetFrames[panel.id];
+        return [panel.id, {
+          x: start.x + (target.x - start.x) * eased,
+          y: start.y + (target.y - start.y) * eased,
+          width: start.width + (target.width - start.width) * eased,
+          height: start.height + (target.height - start.height) * eased,
+        }];
+      }));
+      updateDisplayedFrames(nextFrames);
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [figure, layoutTransitionKey, updateDisplayedFrames]);
 
   // Mobile Touch Module hook
   const touchModule = useMobileCanvasTouch({
@@ -379,13 +427,14 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                 if (!panel || !layer.visible) return null;
 
                 const isSelected = selectedPanelId === panel.id;
+                const panelFrame = displayedFrames[panel.id] || panel.frame;
 
                 return (
                   <Group
                     key={panel.id}
                     id={`group-${panel.id}`}
-                    x={panel.frame.x}
-                    y={panel.frame.y}
+                    x={panelFrame.x}
+                    y={panelFrame.y}
                     draggable={!layer.locked && toolMode === 'select'}
                     onClick={(e) => {
                       e.cancelBubble = true;
@@ -402,11 +451,13 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                       }
                     }}
                     onDragEnd={(e) => {
-                      onUpdatePanelFrame(panel.id, {
+                      const snappedFrame = snapPanelFrame({
                         ...panel.frame,
-                        x: Math.round(e.target.x()),
-                        y: Math.round(e.target.y()),
-                      });
+                        x: e.target.x(),
+                        y: e.target.y(),
+                      }, figure.canvasSize);
+                      e.target.position({ x: snappedFrame.x, y: snappedFrame.y });
+                      onUpdatePanelFrame(panel.id, snappedFrame);
                     }}
                     onTransformEnd={(e) => {
                       const node = e.target;
@@ -415,12 +466,14 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                       node.scaleX(1);
                       node.scaleY(1);
 
-                      onUpdatePanelFrame(panel.id, {
+                      const snappedFrame = snapPanelFrame({
                         x: Math.round(node.x()),
                         y: Math.round(node.y()),
                         width: Math.max(120, Math.round(panel.frame.width * scaleX)),
                         height: Math.max(80, Math.round(panel.frame.height * scaleY)),
-                      });
+                      }, figure.canvasSize);
+                      node.position({ x: snappedFrame.x, y: snappedFrame.y });
+                      onUpdatePanelFrame(panel.id, snappedFrame);
                     }}
                   >
                     {/* Active selection border */}
@@ -428,8 +481,8 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                       <Rect
                         x={-2}
                         y={-2}
-                        width={panel.frame.width + 4}
-                        height={panel.frame.height + 4}
+                        width={panelFrame.width + 4}
+                        height={panelFrame.height + 4}
                         stroke="#24b47e"
                         strokeWidth={1.5}
                         cornerRadius={2}
@@ -440,7 +493,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                     {panel.spec.kind === 'forest-plot' && (
                       <ForestPlotKonva
                         spec={panel.spec}
-                        frame={panel.frame}
+                        frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
                       />
@@ -449,7 +502,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                     {panel.spec.kind === 'funnel-plot' && (
                       <FunnelPlotKonva
                         spec={panel.spec}
-                        frame={panel.frame}
+                        frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
                       />
@@ -458,7 +511,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                     {panel.spec.kind === 'subgroup-analysis' && (
                       <SubgroupPlotKonva
                         spec={panel.spec}
-                        frame={panel.frame}
+                        frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
                       />
@@ -467,7 +520,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                     {panel.spec.kind === 'grouped-bar' && (
                       <GroupedBarKonva
                         spec={panel.spec}
-                        frame={panel.frame}
+                        frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
                       />
@@ -476,7 +529,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                     {panel.spec.kind === 'text-caption' && (
                       <CaptionKonva
                         spec={panel.spec}
-                        frame={panel.frame}
+                        frame={panelFrame}
                         theme={activeTheme}
                       />
                     )}
@@ -484,7 +537,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                     {panel.spec.kind === 'single-chart' && (
                       <SingleChartKonva
                         spec={panel.spec}
-                        frame={panel.frame}
+                        frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
                         datasetId={datasetId}

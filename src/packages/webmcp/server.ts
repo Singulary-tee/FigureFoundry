@@ -12,18 +12,18 @@ export class WebMcpServer {
   private dispatchDomainAction: (action: FigureDomainAction) => any;
   private getState: () => FigureState;
   private store: FigureStore;
-  private getEditablePanelIds: () => string[];
+  private getTargetPanelIds: () => string[];
 
   constructor(
     dispatch: (action: FigureDomainAction) => any,
     getState: () => FigureState,
     store: FigureStore = globalFigureStore,
-    getEditablePanelIds: () => string[] = () => []
+    getTargetPanelIds: () => string[] = () => []
   ) {
     this.dispatchDomainAction = dispatch;
     this.getState = getState;
     this.store = store;
-    this.getEditablePanelIds = getEditablePanelIds;
+    this.getTargetPanelIds = getTargetPanelIds;
   }
 
   public listTools(): WebMcpToolDefinition[] {
@@ -41,7 +41,7 @@ export class WebMcpServer {
   ): Promise<{ result: any; log: WebMcpCallLog }> {
     const startTime = performance.now();
     const currentState = this.getState();
-    const editablePanelIds = this.getEditablePanelIds();
+    const targetPanelIds = this.getTargetPanelIds();
     let result: any = null;
     let status: 'success' | 'error' | 'rejected' = 'success';
 
@@ -88,8 +88,14 @@ export class WebMcpServer {
           }
 
           result = {
-              agentEditablePanelId: editablePanelIds[0] || '',
-              editablePanelIds,
+            targetPanelIds,
+            selectedPanelId: (currentState as any).selectedPanelId || null,
+            panels: ((currentState as any).panels || []).map((panel: any) => ({
+              id: panel.id,
+              label: panel.label,
+              kind: panel.spec?.kind,
+              title: panel.spec?.kind === 'single-chart' ? panel.spec.spec?.title : panel.spec?.title,
+            })),
             datasetId: currentState.datasetId || 'palmer-penguins',
             scientificQuestion,
             figureIntent: currentState.spec?.figureIntent || 'comparison',
@@ -111,7 +117,7 @@ export class WebMcpServer {
         }
 
         case 'propose_figure_revision': {
-          if (!inputArgs.targetPanelId || (editablePanelIds.length > 0 && !editablePanelIds.includes(inputArgs.targetPanelId))) {
+          if (!inputArgs.targetPanelId || !targetPanelIds.includes(inputArgs.targetPanelId)) {
             status = 'rejected';
             result = {
               valid: false,
@@ -119,7 +125,7 @@ export class WebMcpServer {
                 {
                   severity: 'blocking',
                   path: 'targetPanelId',
-                  message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not present in the active figure. Choose one of: ${editablePanelIds.join(', ')}.`,
+                  message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not present in the active figure. Inspect the workspace and choose one of: ${targetPanelIds.join(', ')}.`,
                 },
               ],
             };
@@ -155,14 +161,14 @@ export class WebMcpServer {
 
         case 'apply_figure_revision': {
           // 1. Validate targetPanelId
-          if (!inputArgs.targetPanelId || (editablePanelIds.length > 0 && !editablePanelIds.includes(inputArgs.targetPanelId))) {
+          if (!inputArgs.targetPanelId || !targetPanelIds.includes(inputArgs.targetPanelId)) {
             status = 'rejected';
             result = {
-              status: 'rejected_unapproved',
+              status: 'rejected_invalid_target',
               newRevision: currentState.currentRevision,
               appliedSpec: null,
               provenanceEventId: '',
-              message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not present in the active figure. Choose one of: ${editablePanelIds.join(', ')}.`,
+              message: `Target panel '${inputArgs.targetPanelId || 'undefined'}' is not present in the active figure. Inspect the workspace and choose one of: ${targetPanelIds.join(', ')}.`,
             } as ApplyResult;
             break;
           }
@@ -208,6 +214,7 @@ export class WebMcpServer {
 
           // 3. Native Browser Confirmation Gate (Invariant 3)
           let userConfirmed = false;
+          let confirmationUnavailable = false;
           const proposed = currentState.activePreview.proposedSpec;
           const confirmMessage = `Apply proposed figure revision to ${inputArgs.targetPanelId.toUpperCase()}?\n\nTitle: ${proposed.title || 'Untitled'}\nType: ${currentState.activePreview.panelKind || 'single-chart'}\nRevision: Rev ${currentState.currentRevision} -> Rev ${currentState.currentRevision + 1}`;
 
@@ -223,7 +230,7 @@ export class WebMcpServer {
                 });
                 userConfirmed = Boolean(res?.confirmed ?? res);
               } catch (e) {
-                userConfirmed = true;
+                confirmationUnavailable = true;
               }
             } else if (typeof (navigator as any).modelContext?.requestUserInteraction === 'function') {
               try {
@@ -236,13 +243,13 @@ export class WebMcpServer {
                 });
                 userConfirmed = Boolean(res?.confirmed ?? res);
               } catch (e) {
-                userConfirmed = true;
+                confirmationUnavailable = true;
               }
             } else {
-              userConfirmed = true;
+              confirmationUnavailable = true;
             }
           } else {
-            userConfirmed = true;
+            confirmationUnavailable = true;
           }
 
           if (!userConfirmed) {
@@ -252,7 +259,9 @@ export class WebMcpServer {
               newRevision: currentState.currentRevision,
               appliedSpec: null,
               provenanceEventId: '',
-              message: 'Revision was declined in the native confirmation prompt.',
+              message: confirmationUnavailable
+                ? 'Native confirmation is unavailable. Ask the user to open FigureFoundry in a WebMCP-capable browser before applying this revision.'
+                : 'Revision was declined in the native confirmation prompt.',
             } as ApplyResult;
             break;
           }

@@ -48,9 +48,10 @@ const run = async () => {
   const fields = unwrap(await rpc('tools/call', { name: 'inspect_dataset_fields', arguments: {} }));
   console.log('   fields:', fields?.rowCount, 'rows |', fields?.fields?.map((f) => f.name).join(', '));
   const ws = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
-  console.log('   workspace: editable=%s dataset=%s rev=%d intent=%s', ws?.agentEditablePanelId, ws?.datasetId, ws?.revision, ws?.figureIntent);
+  console.log('   workspace: targets=%s dataset=%s rev=%d intent=%s', ws?.targetPanelIds?.join(','), ws?.datasetId, ws?.revision, ws?.figureIntent);
 
-  const editable = ws?.agentEditablePanelId;
+  const editable = ws?.targetPanelIds?.[0];
+  if (!editable) throw new Error('inspect_figure_workspace returned no target panels');
 
   const propose = async (overrides = {}) =>
     unwrap(await rpc('tools/call', {
@@ -77,31 +78,49 @@ const run = async () => {
     }));
 
   console.log(LINE);
-  console.log('3. Native confirmation gate — DECLINE');
+  console.log('3. Native confirmation gate — UNAVAILABLE');
+  const pUnavailable = await propose();
+  const aUnavailable = await apply(pUnavailable?.previewId, pUnavailable?.basedOnRevision);
+  if (aUnavailable?.status !== 'rejected_unapproved') {
+    throw new Error(`Expected unavailable confirmation to reject, received ${aUnavailable?.status}`);
+  }
+  console.log('   apply (no confirmation API):', JSON.stringify(aUnavailable?.status));
+
+  console.log(LINE);
+  console.log('4. Native confirmation gate — DECLINE');
   await page.evaluate(() => { window.requestUserInteraction = () => Promise.resolve({ confirmed: false }); });
   const pDecline = await propose();
   const aDecline = await apply(pDecline?.previewId, pDecline?.basedOnRevision);
+  if (aDecline?.status !== 'rejected_unapproved') {
+    throw new Error(`Expected declined confirmation to reject, received ${aDecline?.status}`);
+  }
   console.log('   propose:', JSON.stringify({ previewId: pDecline?.previewId, valid: pDecline?.validation?.valid }));
   console.log('   apply (declined by human):', JSON.stringify(aDecline?.status));
 
   console.log(LINE);
-  console.log('4. Native confirmation gate — ACCEPT');
+  console.log('5. Native confirmation gate — ACCEPT');
   await page.evaluate(() => { window.requestUserInteraction = () => Promise.resolve({ confirmed: true }); });
   const pAccept = await propose();
   const aAccept = await apply(pAccept?.previewId, pAccept?.basedOnRevision);
+  if (aAccept?.status !== 'applied') {
+    throw new Error(`Expected accepted confirmation to apply, received ${aAccept?.status}`);
+  }
   console.log('   propose:', JSON.stringify({ previewId: pAccept?.previewId, valid: pAccept?.validation?.valid, blockedIssues: pAccept?.validation?.issues?.filter((i) => i.severity === 'blocking').length }));
   console.log('   apply (accepted):', JSON.stringify({ status: aAccept?.status, newRev: aAccept?.newRevision, title: aAccept?.appliedSpec?.title }));
 
   console.log(LINE);
-  console.log('5. Single-target invariant');
+  console.log('6. Preview target binding');
   const pWrong = await propose();
   const aWrong = await apply(pWrong?.previewId, pWrong?.basedOnRevision, editable === 'panel-a' ? 'panel-b' : 'panel-a');
+  if (aWrong?.status !== 'rejected_wrong_target') {
+    throw new Error(`Expected wrong target to reject, received ${aWrong?.status}`);
+  }
   console.log('   apply to wrong panel:', JSON.stringify(aWrong?.status));
   const aUnknown = await apply('prev_does_not_exist', 1);
   console.log('   apply unknown preview:', JSON.stringify(aUnknown?.status));
 
   console.log(LINE);
-  console.log('6. Editor screenshot after applied revision');
+  console.log('7. Editor screenshot after applied revision');
   await page.getByRole('button', { name: /Launch Editor|Open Figure Editor/i }).first().click({ timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(1800);
   await page.screenshot({ path: '/tmp/shots/08-after-apply.png' });

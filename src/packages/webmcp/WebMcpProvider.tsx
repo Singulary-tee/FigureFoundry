@@ -188,20 +188,31 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
       if (!isNative && nativeRegistrationRef.current.context !== modelContext) {
         nativeRegistrationRef.current = { context: modelContext, names: new Set() };
       }
+      let registration = nativeRegistrationRef.current;
+      if (isNative && typeof window !== 'undefined') {
+        const appWindow = window as any;
+        // Native modelContext may be returned through a new proxy on every read.
+        // Keep this page-lifetime registry independent of proxy identity.
+        if (!appWindow.__FIGURE_FOUNDRY_NATIVE_WEBMCP_REGISTRY__) {
+          appWindow.__FIGURE_FOUNDRY_NATIVE_WEBMCP_REGISTRY__ = { context: modelContext, names: new Set<string>() };
+        }
+        registration = appWindow.__FIGURE_FOUNDRY_NATIVE_WEBMCP_REGISTRY__;
+      }
       const desiredNames = new Set(registeredTools.map((tool) => tool.name));
-      nativeRegistrationRef.current.names.forEach((name) => {
+      registration.names.forEach((name) => {
         if (desiredNames.has(name)) return;
         try {
           modelContext.unregisterTool?.(name);
         } catch {
           // Hosts without unregister support will replace the page context on navigation.
         }
-        nativeRegistrationRef.current.names.delete(name);
+        registration.names.delete(name);
       });
       registeredTools.forEach(tool => {
-        if (nativeRegistrationRef.current.names.has(tool.name)) return;
+        if (registration.names.has(tool.name)) return;
+        registration.names.add(tool.name);
         try {
-          modelContext.registerTool({
+          const registrationResult = modelContext.registerTool({
             name: tool.name,
             description: tool.description,
             inputSchema: tool.inputSchema,
@@ -210,12 +221,16 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
             execute: async (args: any) => {
               const res = await executeTool(tool.name, args, 'agent');
               return {
-                content: [{ type: 'text', text: JSON.stringify(res.result) }]
+                content: [{ type: 'text', text: JSON.stringify(res.result) }],
+                structuredContent: res.result,
+                isError: res.log.status !== 'success',
               };
             }
           });
-          nativeRegistrationRef.current.names.add(tool.name);
-        } catch (e) {}
+          Promise.resolve(registrationResult).catch(() => registration.names.delete(tool.name));
+        } catch {
+          registration.names.delete(tool.name);
+        }
       });
 
       try {

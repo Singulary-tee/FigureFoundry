@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Table as TableIcon,
   Layers,
+  Wand2,
 } from 'lucide-react';
 import { CanvasToolMode } from '../../types/multipanel';
 
@@ -17,6 +18,7 @@ interface CanvasToolbarProps {
   onSelectToolMode: (mode: CanvasToolMode) => void;
   onUploadImage: (file: File) => void;
   onArrange: (action: 'front' | 'back') => void;
+  onTidyLayout: () => void;
 }
 
 export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
@@ -24,6 +26,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onSelectToolMode,
   onUploadImage,
   onArrange,
+  onTidyLayout,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -162,6 +165,15 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       >
         <Layers className="w-3.5 h-3.5" />
         <span>Arrange</span>
+      </button>
+
+      <button
+        onClick={onTidyLayout}
+        className="flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium text-[#71717a] dark:text-[#a1a1aa] hover:bg-[#24b47e]/10 hover:text-[#168a5b] dark:hover:text-[#52d69a] active:scale-95 transition-all shrink-0 cursor-pointer"
+        title="Tidy panels into a publication-ready grid"
+      >
+        <Wand2 className="w-3.5 h-3.5" />
+        <span>Tidy layout</span>
       </button>
     </div>
   );
