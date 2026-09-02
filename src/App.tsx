@@ -744,13 +744,11 @@ export default function App() {
             {/* Left: Active Workspace / Context Info */}
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-[#1f1f23] px-2.5 py-1 rounded-md">
-                Standard Workspace
+                {domainState.workspaces.find((workspace) => workspace.id === domainState.activeWorkspaceId)?.name || 'Workspace'}
               </span>
-              <span className="text-xs text-zinc-400 hidden sm:inline">•</span>
-              <span className="text-xs text-zinc-400 font-mono hidden sm:inline">Guest Account Session</span>
             </div>
 
-            {/* Right: Theme, Quick Jump, User Profile */}
+            {/* Right: Theme, Quick Jump */}
             <div className="flex items-center gap-4">
               {/* Quick Launch Editor */}
               {figure && (
@@ -777,17 +775,6 @@ export default function App() {
                   </svg>
                 )}
               </button>
-
-              {/* Profile Avatar Badge */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-[#24b47e]/25 text-[#24b47e] font-bold text-xs flex items-center justify-center border border-[#24b47e]/40 select-none">
-                  GR
-                </div>
-                <div className="hidden md:flex flex-col text-left leading-none">
-                  <span className="text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5]">Guest Researcher</span>
-                  <span className="text-[10px] text-zinc-400 mt-0.5">Role: Collaborator</span>
-                </div>
-              </div>
             </div>
           </header>
         )}
@@ -825,13 +812,13 @@ export default function App() {
               })}
               selectedDatasetId={domainState.selectedDatasetId}
               onSwitchFigure={(figId) => {
-                globalFigureStore.dispatch({ type: 'SWITCH_FIGURE', payload: figId });
+                globalDomainStore.dispatch({ type: 'SWITCH_FIGURE', payload: figId });
               }}
               onCreateFigure={(name) => {
-                globalFigureStore.dispatch({ type: 'CREATE_FIGURE', payload: name ? { name } : undefined });
+                globalDomainStore.dispatch({ type: 'CREATE_FIGURE', payload: name ? { name } : undefined });
               }}
               onSelectDataset={(dsId) => {
-                globalFigureStore.dispatch({ type: 'SELECT_DATASET', payload: dsId });
+                globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: dsId });
               }}
             />
           )}
@@ -920,6 +907,9 @@ export default function App() {
                 onCloseMobile={() => setIsMobileInspectorOpen(false)}
                 isCollapsed={isRightSidebarCollapsed}
                 onToggleCollapse={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
+                selectedDatasetId={domainState.selectedDatasetId}
+                availableDatasets={domainState.datasets}
+                onSelectDataset={(dsId) => globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: dsId })}
               />
             </>
           )}
@@ -945,6 +935,9 @@ export default function App() {
           {currentView === 'analyses' && figure && (
             <AnalysesView
               figure={figure}
+              selectedDatasetId={domainState.selectedDatasetId}
+              availableDatasets={domainState.datasets}
+              onSelectDataset={(datasetId) => globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: datasetId })}
               onUpdatePanelSpec={handleUpdatePanelSpec}
               onNavigate={setCurrentView}
             />

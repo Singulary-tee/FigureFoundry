@@ -36,10 +36,17 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
 
   const customToolsRef = useRef<Map<string, { definition: WebMcpToolDefinition; executeFn?: (args: any) => Promise<any> }>>(new Map());
   const [, setVersion] = useState(0);
+  const nativeRegistrationRef = useRef<{ context: any; names: Set<string> }>({ context: null, names: new Set() });
 
-  const server = useMemo(() => {
-    return new WebMcpServer(dispatchDomainAction, () => currentState);
-  }, [dispatchDomainAction, currentState]);
+  // Keep a stable server instance across renders; it reads fresh state via getState().
+  const dispatchRef = useRef(dispatchDomainAction);
+  dispatchRef.current = dispatchDomainAction;
+  const stateRef = useRef(currentState);
+  stateRef.current = currentState;
+  const server = useMemo(
+    () => new WebMcpServer((a) => dispatchRef.current(a), () => stateRef.current),
+    []
+  );
 
   const registeredTools = useMemo(() => {
     const datasetTools = getDatasetAwareTools(currentState.datasetId, currentState.currentRevision);
@@ -167,8 +174,14 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
     setIsNativeSupported(isNative);
 
     if (modelContext?.registerTool) {
-      
+      // The polyfill wrapper is recreated by the effect; native modelContext is not.
+      // Keep the registration set across wrapper recreation so native hosts do not
+      // receive duplicate tool names during state updates or StrictMode effects.
+      if (!isNative && nativeRegistrationRef.current.context !== modelContext) {
+        nativeRegistrationRef.current = { context: modelContext, names: new Set() };
+      }
       registeredTools.forEach(tool => {
+        if (nativeRegistrationRef.current.names.has(tool.name)) return;
         try {
           modelContext.registerTool({
             name: tool.name,
@@ -183,6 +196,7 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
               };
             }
           });
+          nativeRegistrationRef.current.names.add(tool.name);
         } catch (e) {}
       });
 

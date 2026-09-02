@@ -3,6 +3,7 @@ import { DomainCommand } from './commands';
 import { recordRevision } from '../provenance/ledger';
 import { DEFAULT_MULTIPANEL_FIGURE, createNewFigure } from '../multipanel/defaultFigure';
 import { saveFigureToStorage, saveActiveThemeId } from '../multipanel/storage';
+import { registerRuntimeDataset } from '../data-model/profiler';
 
 export function domainReducer(state: DomainState, command: DomainCommand): DomainState {
   switch (command.type) {
@@ -15,8 +16,8 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         ...state,
         account: {
           id: isGuest ? 'acc-guest' : 'acc-1',
-          name: isGuest ? 'Guest User' : 'Standard User',
-          email: isGuest ? 'guest@example.com' : 'user@example.com',
+          name: isGuest ? 'Researcher' : 'Researcher',
+          email: isGuest ? 'researcher@figurefoundry.local' : 'researcher@figurefoundry.local',
           type: command.payload,
           activeWorkspaceId: state.activeWorkspaceId,
         },
@@ -143,12 +144,41 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         updatedAt: new Date().toISOString().split('T')[0],
       };
 
-      // Create initial figure for this project (blank canvas)
+      // Create initial figure for this project — seed one agent-editable panel so
+      // the canvas is never a blank white page on first open.
       const freshFig = {
         id: `fig-${Date.now()}`,
         name: `${newProj.name} - Canvas 1`,
-        panels: [],
-        layers: [],
+        panels: [
+          {
+            id: 'panel-a',
+            label: 'Panel A',
+            letter: 'A',
+            frame: { x: 30, y: 20, width: 560, height: 360 },
+            spec: {
+              kind: 'single-chart',
+              isAgentEditable: true,
+              spec: {
+                title: 'Agent Editable Chart',
+                mark: 'bar',
+                encoding: {
+                  x: { field: 'species', type: 'nominal' },
+                  y: { field: 'body_mass_g', type: 'quantitative', aggregate: 'mean' },
+                },
+              },
+            },
+          },
+        ],
+        layers: [
+          {
+            id: 'layer-panel-a',
+            name: 'Panel A',
+            visible: true,
+            locked: false,
+            panelId: 'panel-a',
+            order: 0,
+          },
+        ],
         manualItems: [],
         canvasSize: { width: 1200, height: 800 },
         activeThemeId: 'nature',
@@ -207,7 +237,12 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
       const figureCount = activeProj ? activeProj.figureIds.length + 1 : state.figures.length + 1;
       const title = command.payload?.name || `Figure ${figureCount}. New Canvas Composition`;
       
-      const freshFig = createNewFigure(title);
+      // Start every new canvas from the same usable scientific template.
+      const freshFig = {
+        ...structuredClone(DEFAULT_MULTIPANEL_FIGURE),
+        id: `fig-${Date.now()}`,
+        name: title,
+      };
       saveFigureToStorage(freshFig);
 
       const updatedProjects = state.projects.map((p) =>
@@ -258,6 +293,16 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
       const datasets = exists
         ? state.datasets.map((d) => (d.id === dataset.id ? dataset : d))
         : [...state.datasets, dataset];
+
+      // Make the imported dataset visible to profileDataset()/DataView/agent tools
+      // by registering it in the runtime registry (rows -> records shape).
+      registerRuntimeDataset({
+        id: dataset.id,
+        title: dataset.title || dataset.name || dataset.id,
+        description: dataset.description || 'User-imported dataset',
+        citation: 'Uploaded local scientific data',
+        records: dataset.rows || [],
+      });
 
       let updatedProjects = state.projects;
       let updatedWorkspaces = state.workspaces;
@@ -440,8 +485,16 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         ...state,
         figure: updatedFigure,
         provenance,
+        activePreview: null,
       };
     }
+
+    case 'SET_PREVIEW': {
+      return { ...state, activePreview: command.payload.preview };
+    }
+
+    case 'CLEAR_PREVIEW':
+      return { ...state, activePreview: null };
 
     case 'SET_WEBMCP_CONNECTED':
       return { ...state, isWebMcpConnected: command.payload };

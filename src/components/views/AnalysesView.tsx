@@ -13,17 +13,23 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { MultiPanelFigure, ForestPlotSpec, FunnelPlotSpec } from '../../types/multipanel';
-import { runMetaAnalysis, generateFunnelPlotData } from '../../packages/stats/metaAnalysis';
+import { runMetaAnalysis, generateFunnelPlotData, studentTwoSidedPValue } from '../../packages/stats/metaAnalysis';
 import { profileDataset } from '../../packages/data-model/profiler';
 
 interface AnalysesViewProps {
   figure: MultiPanelFigure;
+  selectedDatasetId?: string | null;
+  availableDatasets?: Array<{ id: string; title?: string }>;
+  onSelectDataset?: (datasetId: string) => void;
   onUpdatePanelSpec: (panelId: string, spec: any) => void;
   onNavigate: (view: 'figures' | 'dashboard' | 'data' | 'analyses' | 'notes' | 'settings' | 'help') => void;
 }
 
 export const AnalysesView: React.FC<AnalysesViewProps> = ({
   figure,
+  selectedDatasetId,
+  availableDatasets = [],
+  onSelectDataset,
   onUpdatePanelSpec,
   onNavigate,
 }) => {
@@ -63,7 +69,12 @@ export const AnalysesView: React.FC<AnalysesViewProps> = ({
     }
     const slope = den === 0 ? 0 : num / den;
     const intercept = meanSnd - slope * meanPrec;
-    const eggerPVal = Math.abs(intercept) > 1.96 ? 0.032 : 0.418;
+    // Egger's intercept is tested with its regression standard error, not a threshold lookup.
+    const residuals = snds.map((snd, i) => snd - (intercept + slope * precisions[i]));
+    const residualVariance = residuals.reduce((sum, residual) => sum + residual ** 2, 0) / Math.max(1, n - 2);
+    const interceptSE = den === 0 ? Infinity : Math.sqrt(residualVariance * (1 / n + meanPrec ** 2 / den));
+    const tStatistic = interceptSE === 0 || !Number.isFinite(interceptSE) ? 0 : intercept / interceptSE;
+    const eggerPVal = studentTwoSidedPValue(tStatistic, Math.max(1, n - 2));
 
     return {
       intercept: intercept.toFixed(3),
@@ -75,7 +86,8 @@ export const AnalysesView: React.FC<AnalysesViewProps> = ({
   }, [metaResult]);
 
   // Dataset correlation matrix
-  const datasetProfile = profileDataset('palmer-penguins');
+  const activeDatasetId = selectedDatasetId || 'palmer-penguins';
+  const datasetProfile = useMemo(() => profileDataset(activeDatasetId), [activeDatasetId]);
   const quantFields = datasetProfile.fields.filter((f) => f.type === 'quantitative');
 
   const correlationMatrix = useMemo(() => {
@@ -155,6 +167,7 @@ export const AnalysesView: React.FC<AnalysesViewProps> = ({
             <h1 className="text-xl sm:text-2xl font-bold text-[#0f172a] dark:text-[#f4f4f5] tracking-tight truncate">
               Meta-Analytic Modeling & Diagnostics
             </h1>
+            <p className="text-xs text-[#71717a] mt-1">Analyze studies and numeric relationships from the selected dataset.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -172,6 +185,21 @@ export const AnalysesView: React.FC<AnalysesViewProps> = ({
               <span>Apply to Figure</span>
             </button>
           </div>
+        </div>
+
+        <div className="flex items-center gap-3 p-3 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl">
+          <FileSpreadsheet className="w-4 h-4 text-[#24b47e] shrink-0" />
+          <label htmlFor="analysis-dataset" className="text-xs font-semibold">Analysis dataset</label>
+          <select
+            id="analysis-dataset"
+            value={activeDatasetId}
+            onChange={(event) => onSelectDataset?.(event.target.value)}
+            className="ml-auto max-w-[min(60%,18rem)] px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#121212] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs outline-none"
+          >
+            {(availableDatasets.length ? availableDatasets : [{ id: activeDatasetId, title: activeDatasetId }]).map((dataset) => (
+              <option key={dataset.id} value={dataset.id}>{dataset.title || dataset.id}</option>
+            ))}
+          </select>
         </div>
 
         {/* View Tabs */}

@@ -147,6 +147,57 @@ export function chiSquarePValue(q: number, df: number): number {
   return Math.max(0, Math.min(1, p));
 }
 
+// Regularized incomplete beta used for the Student t distribution.
+function betaContinuedFraction(a: number, b: number, x: number): number {
+  const maxIterations = 200;
+  const epsilon = 3e-7;
+  let qab = a + b;
+  let qap = a + 1;
+  let qam = a - 1;
+  let c = 1;
+  let d = 1 - (qab * x) / qap;
+  if (Math.abs(d) < 1e-30) d = 1e-30;
+  d = 1 / d;
+  let h = d;
+  for (let m = 1; m <= maxIterations; m++) {
+    const m2 = 2 * m;
+    let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
+    d = 1 + aa * d;
+    if (Math.abs(d) < 1e-30) d = 1e-30;
+    c = 1 + aa / c;
+    if (Math.abs(c) < 1e-30) c = 1e-30;
+    d = 1 / d;
+    h *= d * c;
+    aa = (-(a + m) * (qab + m) * x) / ((a + m2) * (qap + m2));
+    d = 1 + aa * d;
+    if (Math.abs(d) < 1e-30) d = 1e-30;
+    c = 1 + aa / c;
+    if (Math.abs(c) < 1e-30) c = 1e-30;
+    d = 1 / d;
+    const delta = d * c;
+    h *= delta;
+    if (Math.abs(delta - 1) < epsilon) break;
+  }
+  return h;
+}
+
+function regularizedBeta(x: number, a: number, b: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const logBeta = logGamma(a) + logGamma(b) - logGamma(a + b);
+  const front = Math.exp(a * Math.log(x) + b * Math.log1p(-x) - logBeta);
+  return x < (a + 1) / (a + b + 2)
+    ? (front * betaContinuedFraction(a, b, x)) / a
+    : 1 - (Math.exp(b * Math.log1p(-x) + a * Math.log(x) - logBeta) * betaContinuedFraction(b, a, 1 - x)) / b;
+}
+
+/** Two-sided p-value for a Student t statistic with the supplied degrees of freedom. */
+export function studentTwoSidedPValue(t: number, degreesOfFreedom: number): number {
+  if (!Number.isFinite(t) || degreesOfFreedom < 1) return 1;
+  const x = degreesOfFreedom / (degreesOfFreedom + t * t);
+  return Math.max(0, Math.min(1, regularizedBeta(x, degreesOfFreedom / 2, 0.5)));
+}
+
 /**
  * Compute Standard Error from 95% Confidence Interval for ratio measures (OR, RR, HR) or difference measures (MD, RD)
  */

@@ -1,5 +1,6 @@
 import { DatasetRecord, BUILTIN_DATASETS } from '../data-model/datasets';
 import { FigureProject } from '../../types/multipanel';
+import { FigurePreview } from '../../types';
 import { ProvenanceLedger } from '../provenance/ledger';
 import { DEFAULT_MULTIPANEL_FIGURE } from '../multipanel/defaultFigure';
 
@@ -47,13 +48,14 @@ export interface DomainState {
   activeView: ActiveView;
   provenance: ProvenanceLedger;
   isWebMcpConnected: boolean;
+  activePreview: FigurePreview | null;
 }
 
 export const INITIAL_DOMAIN_STATE: DomainState = {
   account: {
     id: 'acc-1',
-    name: 'Guest User',
-    email: 'guest@example.com',
+    name: 'Researcher',
+    email: 'researcher@figurefoundry.local',
     type: 'guest',
     activeWorkspaceId: 'ws-1',
   },
@@ -89,6 +91,7 @@ export const INITIAL_DOMAIN_STATE: DomainState = {
   activeView: 'figures',
   provenance: { events: [] },
   isWebMcpConnected: true,
+  activePreview: null,
 };
 
 export const INITIAL_FIGURE_STATE: any = {

@@ -151,6 +151,7 @@ export interface TextCaptionSpec {
 export interface SingleChartSpec {
   kind: 'single-chart';
   spec: FigureSpec;
+  datasetId?: string;
   isAgentEditable: boolean;
   pendingProposal?: boolean;
 }

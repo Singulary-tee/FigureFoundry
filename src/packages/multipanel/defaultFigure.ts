@@ -151,7 +151,6 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
         isAgentEditable: true,
         spec: {
           title: 'Comparative Morphometrics (Palmer Penguins)',
-          subtitle: 'Baseline distribution before agent proposal',
           figureIntent: 'comparison',
           mark: 'bar',
           encoding: {
