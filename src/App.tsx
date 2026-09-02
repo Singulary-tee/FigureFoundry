@@ -812,13 +812,13 @@ export default function App() {
               })}
               selectedDatasetId={domainState.selectedDatasetId}
               onSwitchFigure={(figId) => {
-                globalFigureStore.dispatch({ type: 'SWITCH_FIGURE', payload: figId });
+                globalDomainStore.dispatch({ type: 'SWITCH_FIGURE', payload: figId });
               }}
               onCreateFigure={(name) => {
-                globalFigureStore.dispatch({ type: 'CREATE_FIGURE', payload: name ? { name } : undefined });
+                globalDomainStore.dispatch({ type: 'CREATE_FIGURE', payload: name ? { name } : undefined });
               }}
               onSelectDataset={(dsId) => {
-                globalFigureStore.dispatch({ type: 'SELECT_DATASET', payload: dsId });
+                globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: dsId });
               }}
             />
           )}
@@ -907,6 +907,9 @@ export default function App() {
                 onCloseMobile={() => setIsMobileInspectorOpen(false)}
                 isCollapsed={isRightSidebarCollapsed}
                 onToggleCollapse={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
+                selectedDatasetId={domainState.selectedDatasetId}
+                availableDatasets={domainState.datasets}
+                onSelectDataset={(dsId) => globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: dsId })}
               />
             </>
           )}

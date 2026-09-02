@@ -50,6 +50,9 @@ interface RightSidebarProps {
   onCloseMobile?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  selectedDatasetId?: string | null;
+  availableDatasets?: any[];
+  onSelectDataset?: (datasetId: string) => void;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -67,8 +70,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   isPendingApproval = false,
   isOpenMobile = false,
   onCloseMobile,
-  isCollapsed = false,
+    isCollapsed = false,
   onToggleCollapse,
+  selectedDatasetId,
+  availableDatasets,
+  onSelectDataset,
 }) => {
   const [activeTab, setActiveTab] = useState<'design' | 'data' | 'export'>('design');
 
@@ -94,13 +100,18 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     return null;
   }, [spec]);
 
-  // Single chart runtime dataset records editing handlers
+    // Single chart runtime dataset records editing handlers
+  const activeDatasetId =
+    selectedDatasetId ||
+    (spec?.kind === 'single-chart' && spec.datasetId) ||
+    'palmer-penguins';
+
   const currentDatasetProfile = useMemo(() => {
     if (spec?.kind === 'single-chart') {
-      return profileDataset('palmer-penguins');
+      return profileDataset(activeDatasetId);
     }
     return null;
-  }, [spec]);
+  }, [spec, activeDatasetId, datasetRecordVersion]);
 
   const [datasetRecordVersion, setDatasetRecordVersion] = useState(0);
 
@@ -381,8 +392,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     });
   };
 
-  const handleUpdateDatasetRecord = (rowIndex: number, column: string, val: any) => {
-    const profile = profileDataset('palmer-penguins');
+    const handleUpdateDatasetRecord = (rowIndex: number, column: string, val: any) => {
+    const profile = profileDataset(activeDatasetId);
     const records = [...profile.records];
     if (records[rowIndex]) {
       records[rowIndex] = {
@@ -390,7 +401,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         [column]: isNaN(Number(val)) || val === '' ? val : Number(val),
       };
       registerRuntimeDataset({
-        id: 'palmer-penguins',
+        id: activeDatasetId,
         title: profile.title,
         description: profile.description,
         citation: profile.citation,
@@ -403,22 +414,15 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   };
 
   const handleAddDatasetRecord = () => {
-    const profile = profileDataset('palmer-penguins');
-    const records = [
-      {
-        species: 'Adelie',
-        island: 'Torgersen',
-        bill_length_mm: 41.5,
-        bill_depth_mm: 18.2,
-        flipper_length_mm: 195,
-        body_mass_g: 3850,
-        sex: 'male',
-        year: 2008,
-      },
-      ...profile.records,
-    ];
+        const profile = profileDataset(activeDatasetId);
+    const fieldKeys = profile.fields.map((f) => f.name);
+    const sample: Record<string, unknown> = {};
+    fieldKeys.forEach((k) => {
+      sample[k] = profile.fields.find((f) => f.key === k)!.type === 'quantitative' ? 0 : '';
+    });
+    const records = [sample, ...profile.records];
     registerRuntimeDataset({
-      id: 'palmer-penguins',
+      id: activeDatasetId,
       title: profile.title,
       description: profile.description,
       citation: profile.citation,
@@ -429,10 +433,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   };
 
   const handleRemoveDatasetRecord = (rowIndex: number) => {
-    const profile = profileDataset('palmer-penguins');
+    const profile = profileDataset(activeDatasetId);
     const records = profile.records.filter((_, idx) => idx !== rowIndex);
     registerRuntimeDataset({
-      id: 'palmer-penguins',
+      id: activeDatasetId,
       title: profile.title,
       description: profile.description,
       citation: profile.citation,
@@ -1380,98 +1384,87 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             )}
 
-            {spec.kind === 'single-chart' && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5] block">
-                      Dataset Records (Palmer Penguins)
-                    </span>
-                    <span className="text-[10px] text-[#71717a] block">
-                      {profileDataset('palmer-penguins').records.length} total observations (editable table)
-                    </span>
-                  </div>
+            {spec.kind === 'single-chart' && currentDatasetProfile && (
+  <div className="space-y-3">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        {onSelectDataset && availableDatasets && availableDatasets.length > 0 && (
+          <select
+            value={activeDatasetId}
+            onChange={(e) => onSelectDataset(e.target.value)}
+            className="text-[11px] font-semibold px-2 py-1 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-[#f4f4f5] dark:bg-[#18181b] text-[#0f172a] dark:text-[#f4f4f5]"
+          >
+            {availableDatasets.map((ds) => (
+              <option key={ds.id} value={ds.id}>
+                {ds.title || ds.name || ds.id}
+              </option>
+            ))}
+            <option value="palmer-penguins">Palmer Penguins (demo)</option>
+          </select>
+        )}
+        <div>
+          <span className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5] block">
+            Dataset Records ({currentDatasetProfile.title})
+          </span>
+          <span className="text-[10px] text-[#71717a] block">
+            {currentDatasetProfile.records.length} total observations (editable table)
+          </span>
+        </div>
+      </div>
+      <button
+        onClick={handleAddDatasetRecord}
+        className="flex items-center gap-1 px-2 py-1 bg-[#24b47e]/15 text-[#24b47e] hover:bg-[#24b47e]/25 text-[11px] font-semibold rounded-md transition-colors"
+      >
+        <Plus className="w-3 h-3" />
+        <span>Add Row</span>
+      </button>
+    </div>
+    {currentDatasetProfile.fields.length > 0 ? (
+      <div className="border border-[#e4e4e7] dark:border-[#27272a] rounded-lg overflow-x-auto max-h-72 text-[11px]">
+        <table className="w-full text-left">
+          <thead className="bg-[#f4f4f5] dark:bg-[#18181b] border-b border-[#e4e4e7] dark:border-[#27272a] sticky top-0">
+            <tr>
+                          {currentDatasetProfile.fields.map((f) => (
+                <th key={f.name} className="p-1.5 font-semibold">
+                  {f.name}
+                </th>
+              ))}
+              <th className="p-1.5 w-6"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#e4e4e7] dark:divide-[#27272a]">
+            {currentDatasetProfile.records.map((r, idx) => (
+              <tr key={idx}>
+                                {currentDatasetProfile.fields.map((f) => (
+                  <td key={f.name} className="p-1">
+                    <input
+                      type={f.type === 'quantitative' ? 'number' : 'text'}
+                      step={f.type === 'quantitative' ? 'any' : undefined}
+                      value={r[f.name] === undefined || r[f.name] === null ? '' : String(r[f.name])}
+                      onChange={(e) => handleUpdateDatasetRecord(idx, f.name, e.target.value)}
+                      className="w-full px-1 py-0.5 bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none font-mono"
+                    />
+                  </td>
+                ))}
+                <td className="p-1 text-center">
                   <button
-                    onClick={handleAddDatasetRecord}
-                    className="flex items-center gap-1 px-2 py-1 bg-[#24b47e]/15 text-[#24b47e] hover:bg-[#24b47e]/25 text-[11px] font-semibold rounded-md transition-colors"
+                    onClick={() => handleRemoveDatasetRecord(idx)}
+                    className="text-[#71717a] hover:text-red-500 transition-colors cursor-pointer"
+                    title="Delete Observation"
                   >
-                    <Plus className="w-3 h-3" />
-                    <span>Add Row</span>
+                    <Trash2 className="w-3 h-3" />
                   </button>
-                </div>
-                <div className="border border-[#e4e4e7] dark:border-[#27272a] rounded-lg overflow-x-auto max-h-72 text-[11px]">
-                  <table className="w-full text-left">
-                    <thead className="bg-[#f4f4f5] dark:bg-[#18181b] border-b border-[#e4e4e7] dark:border-[#27272a] sticky top-0">
-                      <tr>
-                        <th className="p-1.5 font-semibold">Species</th>
-                        <th className="p-1.5 font-semibold">Island</th>
-                        <th className="p-1.5 font-semibold">Bill L (mm)</th>
-                        <th className="p-1.5 font-semibold">Mass (g)</th>
-                        <th className="p-1.5 font-semibold">Sex</th>
-                        <th className="p-1.5 w-6"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#e4e4e7] dark:divide-[#27272a]">
-                      {profileDataset('palmer-penguins').records.map((r, idx) => (
-                        <tr key={idx}>
-                          <td className="p-1">
-                            <input
-                              type="text"
-                              value={r.species || ''}
-                              onChange={(e) => handleUpdateDatasetRecord(idx, 'species', e.target.value)}
-                              className="w-16 px-1 py-0.5 bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
-                            />
-                          </td>
-                          <td className="p-1">
-                            <input
-                              type="text"
-                              value={r.island || ''}
-                              onChange={(e) => handleUpdateDatasetRecord(idx, 'island', e.target.value)}
-                              className="w-16 px-1 py-0.5 bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
-                            />
-                          </td>
-                          <td className="p-1">
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={r.bill_length_mm || ''}
-                              onChange={(e) => handleUpdateDatasetRecord(idx, 'bill_length_mm', e.target.value)}
-                              className="w-14 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
-                            />
-                          </td>
-                          <td className="p-1">
-                            <input
-                              type="number"
-                              step="50"
-                              value={r.body_mass_g || ''}
-                              onChange={(e) => handleUpdateDatasetRecord(idx, 'body_mass_g', e.target.value)}
-                              className="w-16 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none font-semibold text-emerald-600"
-                            />
-                          </td>
-                          <td className="p-1">
-                            <input
-                              type="text"
-                              value={r.sex || ''}
-                              onChange={(e) => handleUpdateDatasetRecord(idx, 'sex', e.target.value)}
-                              className="w-14 px-1 py-0.5 bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
-                            />
-                          </td>
-                          <td className="p-1 text-center">
-                            <button
-                              onClick={() => handleRemoveDatasetRecord(idx)}
-                              className="text-[#71717a] hover:text-red-500 transition-colors cursor-pointer"
-                              title="Delete Observation"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div className="text-[11px] text-[#71717a]">No fields detected in this dataset.</div>
+    )}
+  </div>
+)}
 
             {spec.kind === 'text-caption' && (
               <div className="space-y-3 text-xs">
