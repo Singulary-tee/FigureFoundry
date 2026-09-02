@@ -99,6 +99,18 @@ export const HelpView: React.FC<HelpViewProps> = ({ onNavigate }) => {
           </div>
         </div>
 
+        <div className="p-5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl shadow-xs space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#24b47e]" />
+            <h2 className="text-sm font-bold">WebMCP Agent Guide</h2>
+          </div>
+          <div className="text-xs text-[#71717a] leading-relaxed space-y-3">
+            <p>Use the WebMCP panel to ask the agent to inspect your active dataset, propose a chart revision, and apply it after the native confirmation step.</p>
+            <p className="p-3 rounded-lg bg-[#f8f9fa] dark:bg-[#121212] font-mono text-[11px] text-[#0f172a] dark:text-[#f4f4f5]">“Inspect my dataset, then propose a comparison of mean body mass by species colored by island.”</p>
+            <p><strong>Safety boundary:</strong> the agent can modify only the panel marked Agent-editable. Dataset values remain editable by humans, the proposal is validated before application, and each applied revision is recorded in provenance.</p>
+          </div>
+        </div>
+
         {/* System Diagnostics & About */}
         <div className="p-5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl shadow-xs space-y-3">
           <div className="flex items-center justify-between">

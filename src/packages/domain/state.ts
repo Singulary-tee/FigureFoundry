@@ -54,8 +54,8 @@ export interface DomainState {
 export const INITIAL_DOMAIN_STATE: DomainState = {
   account: {
     id: 'acc-1',
-    name: 'Guest User',
-    email: 'guest@example.com',
+    name: 'Researcher',
+    email: 'researcher@figurefoundry.local',
     type: 'guest',
     activeWorkspaceId: 'ws-1',
   },

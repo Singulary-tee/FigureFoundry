@@ -116,22 +116,6 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
             </h1>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={handleCopyMarkdown}
-              className="px-3 py-2 rounded-lg bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-[#24b47e] shrink-0" /> : <Copy className="w-3.5 h-3.5 text-[#71717a] shrink-0" />}
-              <span>{copied ? 'Copied' : 'Copy MD'}</span>
-            </button>
-            <button
-              onClick={handleDownloadMarkdown}
-              className="px-3 py-2 rounded-lg bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-            >
-              <Download className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
-              <span>Export .md</span>
-            </button>
-          </div>
         </div>
 
         {/* View Tabs */}
@@ -210,7 +194,17 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
         {/* Tab 3: Markdown Preview */}
         {activeTab === 'markdown' && (
           <div className="p-6 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl shadow-xs space-y-4 font-mono text-xs text-[#0f172a] dark:text-[#f4f4f5] whitespace-pre-wrap leading-relaxed">
-            <div className="text-sm font-bold text-[#24b47e]"># {figure.name}</div>
+            <div className="flex items-center justify-between gap-3 not-italic whitespace-normal">
+              <div className="text-sm font-bold text-[#24b47e]"># {figure.name}</div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={handleCopyMarkdown} className="px-2.5 py-1.5 rounded-md border border-[#e4e4e7] dark:border-[#27272a] text-[11px] font-sans font-semibold flex items-center gap-1.5 hover:bg-[#f4f4f5] dark:hover:bg-[#27272a]">
+                  {copied ? <Check className="w-3.5 h-3.5 text-[#24b47e]" /> : <Copy className="w-3.5 h-3.5 text-[#71717a]" />}{copied ? 'Copied' : 'Copy MD'}
+                </button>
+                <button onClick={handleDownloadMarkdown} className="px-2.5 py-1.5 rounded-md border border-[#e4e4e7] dark:border-[#27272a] text-[11px] font-sans font-semibold flex items-center gap-1.5 hover:bg-[#f4f4f5] dark:hover:bg-[#27272a]">
+                  <Download className="w-3.5 h-3.5 text-[#71717a]" /> Export .md
+                </button>
+              </div>
+            </div>
             <div className="text-xs font-bold text-sky-600 dark:text-sky-400">## Figure Legend</div>
             <div>{legendText}</div>
             <div className="text-xs font-bold text-sky-600 dark:text-sky-400">## Methods Section</div>

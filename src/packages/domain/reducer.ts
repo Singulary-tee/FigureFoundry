@@ -16,8 +16,8 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         ...state,
         account: {
           id: isGuest ? 'acc-guest' : 'acc-1',
-          name: isGuest ? 'Guest User' : 'Standard User',
-          email: isGuest ? 'guest@example.com' : 'user@example.com',
+          name: isGuest ? 'Researcher' : 'Researcher',
+          email: isGuest ? 'researcher@figurefoundry.local' : 'researcher@figurefoundry.local',
           type: command.payload,
           activeWorkspaceId: state.activeWorkspaceId,
         },
@@ -237,7 +237,12 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
       const figureCount = activeProj ? activeProj.figureIds.length + 1 : state.figures.length + 1;
       const title = command.payload?.name || `Figure ${figureCount}. New Canvas Composition`;
       
-      const freshFig = createNewFigure(title);
+      // Start every new canvas from the same usable scientific template.
+      const freshFig = {
+        ...structuredClone(DEFAULT_MULTIPANEL_FIGURE),
+        id: `fig-${Date.now()}`,
+        name: title,
+      };
       saveFigureToStorage(freshFig);
 
       const updatedProjects = state.projects.map((p) =>

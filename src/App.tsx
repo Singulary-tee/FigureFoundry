@@ -744,7 +744,7 @@ export default function App() {
             {/* Left: Active Workspace / Context Info */}
             <div className="flex items-center gap-3">
               <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-[#1f1f23] px-2.5 py-1 rounded-md">
-                Standard Workspace
+                {domainState.workspaces.find((workspace) => workspace.id === domainState.activeWorkspaceId)?.name || 'Workspace'}
               </span>
             </div>
 
@@ -935,6 +935,9 @@ export default function App() {
           {currentView === 'analyses' && figure && (
             <AnalysesView
               figure={figure}
+              selectedDatasetId={domainState.selectedDatasetId}
+              availableDatasets={domainState.datasets}
+              onSelectDataset={(datasetId) => globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: datasetId })}
               onUpdatePanelSpec={handleUpdatePanelSpec}
               onNavigate={setCurrentView}
             />

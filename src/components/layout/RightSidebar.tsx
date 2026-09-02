@@ -105,6 +105,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     selectedDatasetId ||
     (spec?.kind === 'single-chart' && spec.datasetId) ||
     'palmer-penguins';
+  const [datasetRecordVersion, setDatasetRecordVersion] = useState(0);
 
   const currentDatasetProfile = useMemo(() => {
     if (spec?.kind === 'single-chart') {
@@ -113,7 +114,23 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     return null;
   }, [spec, activeDatasetId, datasetRecordVersion]);
 
-  const [datasetRecordVersion, setDatasetRecordVersion] = useState(0);
+  const chartFields = currentDatasetProfile?.fields || [];
+  const updateChartEncoding = (channel: 'x' | 'y' | 'color' | 'shape', field: string) => {
+    if (spec?.kind !== 'single-chart') return;
+    const current = ((spec as SingleChartSpec).spec || {}) as any;
+    const existing = current.encoding?.[channel] || {};
+    onUpdatePanelSpec(selectedPanel.id, {
+      ...spec,
+      datasetId: activeDatasetId,
+      spec: {
+        ...current,
+        encoding: {
+          ...(current.encoding || {}),
+          [channel]: { ...existing, field, type: chartFields.find((item) => item.name === field)?.type || existing.type || 'nominal' },
+        },
+      },
+    });
+  };
 
   if (isCollapsed) {
     return (
@@ -418,7 +435,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     const fieldKeys = profile.fields.map((f) => f.name);
     const sample: Record<string, unknown> = {};
     fieldKeys.forEach((k) => {
-      sample[k] = profile.fields.find((f) => f.key === k)!.type === 'quantitative' ? 0 : '';
+      sample[k] = profile.fields.find((f) => f.name === k)!.type === 'quantitative' ? 0 : '';
     });
     const records = [sample, ...profile.records];
     registerRuntimeDataset({
@@ -517,6 +534,20 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                       </div>
 
                       <div>
+                        <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Source Dataset</label>
+                        <select
+                          value={activeDatasetId}
+                          onChange={(e) => onSelectDataset?.(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
+                        >
+                          {(availableDatasets || []).map((dataset) => (
+                            <option key={dataset.id} value={dataset.id}>{dataset.title || dataset.id}</option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-[10px] text-[#71717a]">Choose fields from the active dataset for each channel.</p>
+                      </div>
+
+                      <div>
                         <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Chart Title</label>
                         <input
                           type="text"
@@ -557,55 +588,40 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
                       <div>
                         <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">X-Axis Variable</label>
-                        <input
-                          type="text"
+                        <select
                           value={(spec as any).spec?.encoding?.x?.field || 'species'}
-                          onChange={(e) => {
-                            const current = (spec as any).spec || {};
-                            onUpdatePanelSpec(selectedPanel.id, {
-                              ...spec,
-                              spec: {
-                                ...current,
-                                encoding: {
-                                  ...current.encoding,
-                                  x: {
-                                    ...(current.encoding?.x || {}),
-                                    field: e.target.value,
-                                    type: current.encoding?.x?.type || 'nominal',
-                                  },
-                                },
-                              },
-                            });
-                          }}
+                          onChange={(e) => updateChartEncoding('x', e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
-                        />
+                        >
+                          {chartFields.map((field) => <option key={field.name} value={field.name}>{field.name}</option>)}
+                        </select>
                       </div>
 
                       <div>
                         <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Y-Axis Variable</label>
-                        <input
-                          type="text"
+                        <select
                           value={(spec as any).spec?.encoding?.y?.field || 'body_mass_g'}
-                          onChange={(e) => {
-                            const current = (spec as any).spec || {};
-                            onUpdatePanelSpec(selectedPanel.id, {
-                              ...spec,
-                              spec: {
-                                ...current,
-                                encoding: {
-                                  ...current.encoding,
-                                  y: {
-                                    ...(current.encoding?.y || {}),
-                                    field: e.target.value,
-                                    type: current.encoding?.y?.type || 'quantitative',
-                                    aggregate: current.encoding?.y?.aggregate || 'mean',
-                                  },
-                                },
-                              },
-                            });
-                          }}
+                          onChange={(e) => updateChartEncoding('y', e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
-                        />
+                        >
+                          {chartFields.map((field) => <option key={field.name} value={field.name}>{field.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['color', 'shape'] as const).map((channel) => (
+                          <div key={channel}>
+                            <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1 capitalize">{channel} (optional)</label>
+                            <select
+                              value={(spec as any).spec?.encoding?.[channel]?.field || ''}
+                              onChange={(e) => e.target.value && updateChartEncoding(channel, e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
+                            >
+                              <option value="">None</option>
+                              {chartFields.map((field) => <option key={field.name} value={field.name}>{field.name}</option>)}
+                            </select>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
