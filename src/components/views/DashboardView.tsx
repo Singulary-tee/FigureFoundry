@@ -198,13 +198,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         )}
                       </div>
                       <p className="text-[11px] text-[#71717a] line-clamp-1">
-                        Owner: {ws.ownerId === account.id ? 'You (Owner)' : ws.ownerId}
+                        Owner: {ws.ownerId === account.id ? 'You' : ws.ownerId}
                       </p>
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-zinc-400">
                       <span>{projectCount} projects</span>
                       <div className="flex items-center gap-2">
-                        <span>{ws.memberIds?.length || 1} members</span>
+                        <span>{ws.memberIds?.length === 1 ? '1 member' : `${ws.memberIds?.length || 0} members`}</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

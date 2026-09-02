@@ -16,7 +16,7 @@ import { CaptionKonva } from './CaptionKonva';
 import { SingleChartKonva } from './SingleChartKonva';
 import { ManualItemsKonva } from './ManualItemsKonva';
 import { useMobileCanvasTouch } from './useMobileCanvasTouch';
-import { MousePointer2, Move, Copy, Trash2, Lock, MoreHorizontal, Maximize2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Copy, Trash2, Lock, Maximize2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
 interface FigureCanvasProps {
   figure: MultiPanelFigure;
@@ -270,7 +270,8 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
   const floatingToolbarStyle = selectedPanel
     ? {
         left: `${originX + selectedPanel.frame.x * zoom + (selectedPanel.frame.width * zoom) / 2}px`,
-        top: `${originY + selectedPanel.frame.y * zoom - 44}px`,
+        // Place above the panel, clamped so it never clips out of the viewport.
+        top: `${Math.max(4, originY + selectedPanel.frame.y * zoom - 44)}px`,
         transform: 'translateX(-50%)',
       }
     : null;
@@ -315,18 +316,6 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
           style={floatingToolbarStyle}
         >
           <button
-            title="Select pointer"
-            className="p-1.5 rounded bg-[#24b47e] text-white hover:bg-[#1f9d6e] transition-colors"
-          >
-            <MousePointer2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            title="Drag position"
-            className="p-1.5 rounded text-[#71717a] dark:text-[#a1a1aa] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] hover:text-[#18181b] dark:hover:text-[#f4f4f5] transition-colors"
-          >
-            <Move className="w-3.5 h-3.5" />
-          </button>
-          <button
             title="Duplicate panel"
             onClick={onDuplicateSelected}
             className="p-1.5 rounded text-[#71717a] dark:text-[#a1a1aa] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] hover:text-[#18181b] dark:hover:text-[#f4f4f5] transition-colors"
@@ -350,12 +339,6 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
             }`}
           >
             <Lock className="w-3.5 h-3.5" />
-          </button>
-          <button
-            title="More options"
-            className="p-1.5 rounded text-[#71717a] dark:text-[#a1a1aa] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] hover:text-[#18181b] dark:hover:text-[#f4f4f5] transition-colors"
-          >
-            <MoreHorizontal className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

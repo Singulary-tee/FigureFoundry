@@ -52,7 +52,7 @@ export const globalFigureStore = {
         datasetId: s.selectedDatasetId,
         currentRevision: s.provenance.events.length + 1,
         provenanceLedger: s.provenance.events,
-        activePreview: null,
+        activePreview: s.activePreview,
       };
     }
     return cachedSnapshot;
@@ -67,6 +67,8 @@ export const globalFigureStore = {
           commitMessage: action.payload?.commitMessage || 'Applied WebMCP agent action',
         },
       });
+    } else if (action.type === 'SET_PREVIEW' || action.type === 'CLEAR_PREVIEW') {
+      globalDomainStore.dispatch(action as any);
     }
   },
   subscribe: (listener: () => void) => globalDomainStore.subscribe(listener),

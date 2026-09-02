@@ -440,8 +440,16 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         ...state,
         figure: updatedFigure,
         provenance,
+        activePreview: null,
       };
     }
+
+    case 'SET_PREVIEW': {
+      return { ...state, activePreview: command.payload.preview };
+    }
+
+    case 'CLEAR_PREVIEW':
+      return { ...state, activePreview: null };
 
     case 'SET_WEBMCP_CONNECTED':
       return { ...state, isWebMcpConnected: command.payload };
