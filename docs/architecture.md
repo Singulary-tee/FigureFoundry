@@ -90,7 +90,7 @@ Every accepted figure revision writes an immutable audit record to the `Provenan
 ## 4. Mobile-First Scientific UX & Design System Tokens
 
 The user interface MUST be fully usable, legible, and touch-optimized on mobile devices (320px+) as well as desktop ultra-wides:
-1. **Adaptive Workspace Layout**: On mobile viewports (<1024px), panels (Encodings, Agent Console, Dataset Info, Provenance) transition from rigid multi-column layouts into responsive tabbed views and slide-out sheets with minimum 44px touch targets.
+1. **Adaptive Workspace Layout**: On mobile viewports (<1024px), panels (Encodings, Dataset Info, Provenance) transition from rigid multi-column layouts into responsive tabbed views and slide-out sheets with minimum 44px touch targets.
 2. **Centralized Token Architecture**: All UI visual styling, color palettes (Zinc/Next.js/shadcn dark tokens), typography scales, spacing, and component variants must originate from `src/tokens/` without ad-hoc conflicting style declarations.
 3. **Responsive Visualization Engine**: Vega-Lite canvas automatically recalculates viewBox dimensions using `ResizeObserver` and stacks side-by-side diffs vertically on narrow viewports.
 

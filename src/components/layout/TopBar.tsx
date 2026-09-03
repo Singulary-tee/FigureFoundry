@@ -9,7 +9,7 @@ import {
   Download,
   FileCode,
   Image as ImageIcon,
-  CheckCircle2,
+  History,
   MoreVertical,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -35,6 +35,7 @@ interface TopBarProps {
   onExportSvg: () => void;
   onExportJson: () => void;
   onOpenWebMcpDev: () => void;
+  onOpenProvenance: () => void;
   onOpenMobileInspector?: () => void;
 }
 
@@ -52,6 +53,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onExportSvg,
   onExportJson,
   onOpenWebMcpDev,
+  onOpenProvenance,
   onOpenMobileInspector,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -153,6 +155,15 @@ export const TopBar: React.FC<TopBarProps> = ({
           title="Toggle theme"
         >
           {theme === 'light' ? <Sun className="w-3.5 h-3.5 text-amber-500" /> : <Moon className="w-3.5 h-3.5 text-indigo-400" />}
+        </button>
+
+        <button
+          onClick={onOpenProvenance}
+          className="hidden sm:flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-white dark:bg-[#18181b] text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] transition-colors cursor-pointer shrink-0"
+          title="Open figure revision history"
+        >
+          <History className="w-3.5 h-3.5 text-[#24b47e]" />
+          <span>History</span>
         </button>
 
         {/* Mobile Inspector Toggle */}

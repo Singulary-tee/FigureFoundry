@@ -111,7 +111,6 @@ export const ProjectsModal: React.FC<ProjectsModalProps> = ({
             effectMeasure: 'Odds Ratio (OR)',
             studies: [],
           } as any,
-          isAgentEditable: true,
         },
       ],
     };

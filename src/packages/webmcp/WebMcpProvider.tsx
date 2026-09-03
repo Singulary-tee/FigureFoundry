@@ -5,7 +5,7 @@ import { WebMcpServer } from './server';
 import { getDatasetAwareTools, getPageAwareTools, BASE_WEBMCP_TOOLS } from './tools';
 import { initWebMcpPolyfill, isNativeToolsPolicyAllowed } from './polyfill';
 import { setupPostMessageTransport } from './transport';
-import { WebMcpContextValue, WebMcpExecutionState } from './types';
+import { WebMcpContextValue, WebMcpExecutionState, WebMcpAgent } from './types';
 
 export const WebMcpContext = createContext<WebMcpContextValue | null>(null);
 
@@ -48,7 +48,7 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
       (a) => dispatchRef.current(a),
       () => stateRef.current,
       undefined,
-      () => (stateRef.current as any).panelIds || []
+      () => ((stateRef.current as any).panels || []).map((panel: any) => panel.id)
     ),
     []
   );
@@ -73,7 +73,8 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
     async (
       name: string,
       inputArgs: Record<string, any>,
-      actor: 'agent' | 'human' = 'agent'
+      actor: 'agent' | 'human' = 'agent',
+      agent?: WebMcpAgent
     ): Promise<{ result: any; log: WebMcpCallLog }> => {
       setExecutionState({
         isExecuting: true,
@@ -116,7 +117,7 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
           res = { result: customResult, log };
         } else {
           
-          res = await server.executeTool(name, inputArgs, actor);
+          res = await server.executeTool(name, inputArgs, actor, agent);
         }
 
         setCallLogs(prev => [res.log, ...prev]);
@@ -218,13 +219,9 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
             inputSchema: tool.inputSchema,
             outputSchema: tool.outputSchema,
             annotations: tool.annotations,
-            execute: async (args: any) => {
-              const res = await executeTool(tool.name, args, 'agent');
-              return {
-                content: [{ type: 'text', text: JSON.stringify(res.result) }],
-                structuredContent: res.result,
-                isError: res.log.status !== 'success',
-              };
+            execute: async (args: any, agent?: WebMcpAgent) => {
+              const res = await executeTool(tool.name, args, 'agent', agent);
+              return res.result;
             }
           });
           Promise.resolve(registrationResult).catch(() => registration.names.delete(tool.name));

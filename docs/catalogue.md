@@ -142,7 +142,7 @@ This document serves as a comprehensive index and reference guide for the Figure
 * **`TwoPhaseApprovalBanner.tsx`**
   * *Purpose:* Workflow-driven floating panel showing the staged revision proposals, validation alerts, and comparison triggers.
 * **`WebMcpDevPanel.tsx`**
-  * *Purpose:* A developer console tracing active WebMCP packets, tool actions, and runtime logging streams.
+  * *Purpose:* A development-only inspector for tracing active WebMCP packets, tool actions, and runtime logging streams; it is not part of the production judging surface.
 
 ---
 

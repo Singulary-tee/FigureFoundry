@@ -5,6 +5,8 @@ export type PanelKind =
   | 'funnel-plot'
   | 'grouped-bar'
   | 'subgroup-analysis'
+  | 'volcano-plot'
+  | 'heatmap'
   | 'text-caption'
   | 'single-chart';
 
@@ -148,11 +150,17 @@ export interface TextCaptionSpec {
   fontSize: number;
 }
 
+export interface ScientificChartPanelSpec {
+  kind: 'volcano-plot' | 'heatmap';
+  title: string;
+  spec: FigureSpec;
+  significanceThreshold?: number;
+}
+
 export interface SingleChartSpec {
   kind: 'single-chart';
   spec: FigureSpec;
   datasetId?: string;
-  isAgentEditable: boolean;
   pendingProposal?: boolean;
 }
 
@@ -161,8 +169,20 @@ export type PanelSpec =
   | FunnelPlotSpec
   | SubgroupSpec
   | GroupedBarSpec
+  | ScientificChartPanelSpec
   | TextCaptionSpec
   | SingleChartSpec;
+
+export interface PanelChange {
+  panelId: string;
+  spec?: PanelSpec;
+  frame?: PanelFrame;
+}
+
+export interface WorkspacePatch {
+  panelChanges?: PanelChange[];
+  layerOrder?: string[];
+}
 
 export interface PanelFrame {
   x: number;
@@ -176,7 +196,6 @@ export interface Panel {
   label: string; // e.g. "Panel A"
   letter: string; // e.g. "A"
   frame: PanelFrame;
-  isAgentEditable?: boolean;
   spec: PanelSpec;
 }
 

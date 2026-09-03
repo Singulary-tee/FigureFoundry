@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import Konva from 'konva';
-import { DomainState, INITIAL_FIGURE_STATE } from './packages/domain/state';
+import { DomainState } from './packages/domain/state';
 import { FigureDomainAction } from './packages/domain/reducer';
 import { globalDomainStore, globalFigureStore, exportBundle, importBundle } from './packages/domain/store';
 import { profileDataset } from './packages/data-model/profiler';
@@ -46,6 +46,7 @@ import { NotesView } from './components/views/NotesView';
 import { SettingsView } from './components/views/SettingsView';
 import { HelpView } from './components/views/HelpView';
 import { ProvenanceDrawer } from './components/ProvenanceDrawer';
+import { ProposalReviewBanner } from './components/ProposalReviewBanner';
 import { WebMcpDevPanel } from './components/WebMcpDevPanel';
 import { Sliders } from 'lucide-react';
 import { saveDomainState } from './packages/domain/persistence';
@@ -302,6 +303,40 @@ export default function App() {
           showLabels: true,
           showAxes: true,
         };
+      } else if (newKind === 'volcano-plot') {
+        newSpec = {
+          kind: 'volcano-plot',
+          title: 'Volcano Plot',
+          significanceThreshold: 0.05,
+          spec: {
+            title: 'Volcano Plot',
+            figureIntent: 'relationship',
+            mark: 'point',
+            encoding: {
+              x: { field: 'bill_length_mm', type: 'quantitative', axisTitle: 'Effect / fold change' },
+              y: { field: 'body_mass_g', type: 'quantitative', axisTitle: 'Significance' },
+            },
+            showsRawObservations: true,
+            uncertaintyEncoding: 'raw-points-only',
+          },
+        };
+      } else if (newKind === 'heatmap') {
+        newSpec = {
+          kind: 'heatmap',
+          title: 'Expression Heatmap',
+          spec: {
+            title: 'Expression Heatmap',
+            figureIntent: 'relationship',
+            mark: 'point',
+            encoding: {
+              x: { field: 'species', type: 'categorical', axisTitle: 'Group' },
+              y: { field: 'island', type: 'categorical', axisTitle: 'Sample / condition' },
+              color: { field: 'body_mass_g', type: 'quantitative', axisTitle: 'Expression' },
+            },
+            showsRawObservations: true,
+            uncertaintyEncoding: 'raw-points-only',
+          },
+        };
       } else if (newKind === 'text-caption') {
         newSpec = {
           kind: 'text-caption',
@@ -312,9 +347,8 @@ export default function App() {
       } else {
         newSpec = {
           kind: 'single-chart',
-          isAgentEditable: true,
           spec: {
-            title: 'Agent Editable Chart',
+          title: 'WebMCP Chart',
             mark: 'bar',
             encoding: {
               x: { field: 'species', type: 'nominal' },
@@ -646,7 +680,7 @@ export default function App() {
     globalDomainStore.getState.bind(globalDomainStore)
   ) as DomainState;
 
-  // WebMCP Figure State Sync (Legacy/Compatibility Wrapper)
+  // WebMCP-facing snapshot derived from the authoritative domain store.
   const figureState = useSyncExternalStore(
     globalFigureStore.subscribe,
     globalFigureStore.getState,
@@ -659,38 +693,6 @@ export default function App() {
     }
     return globalDomainStore.dispatch(action);
   }, []);
-
-  // Synchronize figureState.spec changes to the agent-editable panel in MultiPanelFigure
-  useEffect(() => {
-    if (figureState.spec) {
-      setFigure((prev) => {
-        const editablePanel = prev.panels.find((p) => p.isAgentEditable || (p.spec as any).isAgentEditable);
-        if (!editablePanel) return prev;
-        // Check if spec changed
-        if (
-          editablePanel.spec.kind === 'single-chart' &&
-          JSON.stringify(editablePanel.spec.spec) === JSON.stringify(figureState.spec)
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          panels: prev.panels.map((p) =>
-            p.id === editablePanel.id
-              ? {
-                  ...p,
-                  spec: {
-                    kind: 'single-chart',
-                    isAgentEditable: true,
-                    spec: figureState.spec,
-                  },
-                }
-              : p
-          ),
-        };
-      });
-    }
-  }, [figureState.spec]);
 
   // The domain store is authoritative for agent commits as well as figure switches.
   useEffect(() => {
@@ -705,29 +707,6 @@ export default function App() {
       }
     }
   }, [domainState.activeFigureId, domainState.figure, currentView]);
-
-  const handleApproveUI = (previewId: string) => {
-    globalFigureStore.dispatch({
-      type: 'APPROVE_PREVIEW_UI',
-      payload: { previewId },
-    });
-  };
-
-  const handleApplyRevision = (previewId: string, basedOnRevision: number) => {
-    globalFigureStore.dispatch({
-      type: 'APPLY_REVISION',
-      payload: {
-        previewId,
-        basedOnRevision,
-        humanApprovalConfirmed: true,
-        actor: 'human',
-      },
-    });
-  };
-
-  const handleRejectPreview = () => {
-    globalFigureStore.dispatch({ type: 'REJECT_PREVIEW' });
-  };
 
   return (
     <WebMcpProvider
@@ -760,6 +739,7 @@ export default function App() {
             onExportSvg={handleExportFullSvg}
             onExportJson={handleExportJson}
             onOpenWebMcpDev={() => setIsWebMcpDevPanelOpen(true)}
+            onOpenProvenance={() => setIsProvenanceDrawerOpen(true)}
             onOpenMobileInspector={() => setIsMobileInspectorOpen(true)}
           />
         ) : (
@@ -861,6 +841,8 @@ export default function App() {
                   onTidyLayout={handleTidyLayout}
                 />
 
+                <ProposalReviewBanner preview={figureState.activePreview} />
+
                 {/* Stage Canvas */}
                 <div className="flex-1 min-h-0 relative flex">
                   <FigureCanvas
@@ -890,6 +872,7 @@ export default function App() {
                     stageRef={stageRef}
                     datasetId={figureState.datasetId}
                     isPendingApproval={!!figureState.activePreview}
+                    pendingPanelId={figureState.activePreview?.panelId || null}
                     layoutTransitionKey={layoutTransitionKey}
                   />
                 </div>

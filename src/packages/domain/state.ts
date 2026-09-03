@@ -93,14 +93,3 @@ export const INITIAL_DOMAIN_STATE: DomainState = {
   isWebMcpConnected: true,
   activePreview: null,
 };
-
-export const INITIAL_FIGURE_STATE: any = {
-  datasetId: 'palmer-penguins',
-  currentRevision: 1,
-  spec: null,
-  activePreview: null,
-  provenanceLedger: [],
-  undoStack: [],
-  redoStack: [],
-  userDatasets: [],
-};

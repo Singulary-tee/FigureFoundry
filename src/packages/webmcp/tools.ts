@@ -47,7 +47,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
   {
     name: 'inspect_figure_workspace',
     title: 'Inspect current figure workspace state',
-    description: 'Returns the current page and figure state, including every panelId available for an agent proposal. Read-only. Call this first in a session or after applying a revision.',
+    description: 'Returns the current page and figure state, including every panelId available for an agent proposal across all panel types. Read-only. Call this first in a session or after applying a revision.',
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: false
@@ -61,6 +61,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
       type: 'object',
       properties: {
         targetPanelIds: { type: 'array', items: { type: 'string' }, description: 'Panels in the active figure that can be targeted by a revision proposal. Always inspect this fresh after the user changes figures.' },
+        layerOrder: { type: 'array', items: { type: 'string' }, description: 'Current panel arrangement order.' },
         selectedPanelId: { type: ['string', 'null'], description: 'The panel the user currently has selected, if any.' },
         panels: {
           type: 'array',
@@ -72,8 +73,20 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
               label: { type: 'string' },
               kind: { type: 'string' },
               title: { type: 'string' },
+              frame: {
+                type: 'object',
+                properties: {
+                  x: { type: 'number' },
+                  y: { type: 'number' },
+                  width: { type: 'number' },
+                  height: { type: 'number' },
+                },
+                required: ['x', 'y', 'width', 'height'],
+              },
+              agentEditable: { type: 'boolean' },
+              spec: { type: 'object', additionalProperties: true },
             },
-            required: ['id', 'label', 'kind', 'title'],
+            required: ['id', 'label', 'kind', 'title', 'frame', 'agentEditable', 'spec'],
             additionalProperties: false,
           },
         },
@@ -86,7 +99,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         revision: { type: 'integer', minimum: 0 },
         currentSpec: {
           type: ['object', 'null'],
-          description: 'The FigureSpec currently applied to the agent-editable panel, or null if no revision has been applied yet this session.'
+          description: 'The current FigureSpec when the selected panel is a Vega chart; structured panel specifications are listed in panels.'
         },
         lastValidation: {
           type: ['object', 'null'],
@@ -110,9 +123,43 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         },
         provenanceEventCount: { type: 'integer', minimum: 0 }
       },
-      required: ['targetPanelIds', 'selectedPanelId', 'panels', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
+      required: ['targetPanelIds', 'layerOrder', 'selectedPanelId', 'panels', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
       additionalProperties: false
     }
+  },
+  {
+    name: 'analyze_group_comparison',
+    title: 'Analyze two groups with uncertainty',
+    description: 'Computes a deterministic Welch two-sample comparison from the loaded dataset, including group means, 95% confidence intervals, the mean difference with a 95% confidence interval, and a significance annotation. Use this before proposing a comparison or significance overlay.',
+    annotations: {
+      readOnlyHint: true,
+      untrustedContentHint: false,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        valueField: { type: 'string', description: 'Numeric outcome field.' },
+        groupField: { type: 'string', description: 'Categorical grouping field.' },
+        group1Val: { type: 'string', description: 'Optional first group value.' },
+        group2Val: { type: 'string', description: 'Optional second group value.' },
+      },
+      required: ['valueField', 'groupField'],
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        datasetId: { type: 'string' },
+        method: { type: 'string' },
+        valueField: { type: 'string' },
+        groupField: { type: 'string' },
+        groups: { type: 'array' },
+        effect: { type: 'object' },
+        test: { type: 'object' },
+        interpretation: { type: 'string' },
+      },
+      required: ['datasetId', 'method', 'valueField', 'groupField', 'groups', 'effect', 'test', 'interpretation'],
+    },
   },
   {
     name: 'propose_figure_revision',
@@ -130,14 +177,19 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
           type: 'string',
           description: 'A panelId from the fresh targetPanelIds list returned by inspect_figure_workspace. Applying a proposal always requests native human confirmation.'
         },
+        basedOnRevision: {
+          type: 'integer',
+          minimum: 0,
+          description: 'Optional optimistic-concurrency guard. Use the revision returned by inspect_figure_workspace.'
+        },
         panelKind: {
           type: 'string',
-          enum: ['forest-plot', 'funnel-plot', 'grouped-bar', 'subgroup-analysis', 'text-caption', 'single-chart'],
+          enum: ['forest-plot', 'funnel-plot', 'grouped-bar', 'subgroup-analysis', 'volcano-plot', 'heatmap', 'text-caption', 'single-chart'],
           description: 'Optional panel renderer to create or replace. Use panelSpec for non-Vega scientific panels.'
         },
         panelSpec: {
           type: 'object',
-          description: 'Optional complete panel specification for forest, funnel, grouped-bar, subgroup, or caption panels.'
+          description: 'Optional complete panel specification for any supported scientific panel renderer.'
         },
         figureIntent: {
           type: 'string',
@@ -200,6 +252,42 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
           type: 'string',
           enum: ['errorbar', 'band', 'raw-points-only', 'none'],
           description: 'Method for encoding data uncertainty or null/none.'
+        },
+        errorBarMode: {
+          type: 'string',
+          enum: ['sd', 'sem', 'ci95', 'none'],
+          description: 'Optional uncertainty layer for a chart. Use ci95, sem, or sd when comparing groups.'
+        },
+        workspacePatch: {
+          type: 'object',
+          description: 'Optional atomic workspace change. Use panelChanges to update other panel specs and/or frames, and layerOrder to arrange existing panels. Every panelId must come from inspect_figure_workspace.',
+          properties: {
+            panelChanges: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  panelId: { type: 'string' },
+                  panelSpec: { type: 'object', description: 'Complete replacement panel specification.' },
+                  frame: {
+                    type: 'object',
+                    properties: {
+                      x: { type: 'number', minimum: 0 },
+                      y: { type: 'number', minimum: 0 },
+                      width: { type: 'number', exclusiveMinimum: 0 },
+                      height: { type: 'number', exclusiveMinimum: 0 },
+                    },
+                    required: ['x', 'y', 'width', 'height'],
+                    additionalProperties: false,
+                  },
+                },
+                required: ['panelId'],
+                additionalProperties: false,
+              },
+            },
+            layerOrder: { type: 'array', items: { type: 'string' }, description: 'Complete panel order from front/top to back/bottom.' },
+          },
+          additionalProperties: false,
         }
       },
       required: ['targetPanelId']
@@ -217,7 +305,10 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
           },
           required: ['valid', 'issues']
         },
-        nextAction: { type: 'string' }
+        nextAction: { type: 'string' },
+        panelId: { type: 'string' },
+        panelKind: { type: 'string' },
+        workspacePatch: { type: ['object', 'null'] }
       },
       required: ['previewId', 'basedOnRevision', 'validation', 'nextAction']
     }

@@ -145,10 +145,8 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
         width: 560,
         height: 350,
       },
-      isAgentEditable: true,
       spec: {
         kind: 'single-chart',
-        isAgentEditable: true,
         spec: {
           title: 'Comparative Morphometrics (Palmer Penguins)',
           figureIntent: 'comparison',
@@ -186,7 +184,7 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
     { id: 'layer-a', panelId: 'panel-a', name: 'Panel A', visible: true, locked: false, order: 0 },
     { id: 'layer-b', panelId: 'panel-b', name: 'Panel B', visible: true, locked: false, order: 1 },
     { id: 'layer-c', panelId: 'panel-c', name: 'Panel C', visible: true, locked: false, order: 2 },
-    { id: 'layer-d', panelId: 'panel-d', name: 'Panel D (Agent)', visible: true, locked: false, order: 3 },
+    { id: 'layer-d', panelId: 'panel-d', name: 'Panel D', visible: true, locked: false, order: 3 },
     { id: 'layer-caption', panelId: 'panel-caption', name: 'Caption', visible: true, locked: false, order: 4 },
   ],
   manualItems: [],

@@ -1,31 +1,44 @@
-# Judge & Evaluator Quickstart (2-Minute Runbook)
+# FigureFoundry Judge Quickstart
 
-Welcome to **FigureFoundry**. This guide walks you through the core workflow demonstrating WebMCP tool execution, deterministic scientific validation, and two-phase human review.
+This is the intended two-minute evaluation path for the public FigureFoundry submission. FigureFoundry exposes browser-native WebMCP tools to an external browser agent; it does **not** embed a pretend agent in the production UI.
 
----
+## 1. Open the live app
 
-## 1. The 3-Step Interactive Walkthrough
+Open the submitted Cloudflare URL in a WebMCP-capable Chrome build (enable the WebMCP experiment if your build requires it) or in the ChatGPT desktop browser agent. The agent and the page share the same live tab and session.
 
-### Step 1: Inspect Dataset via WebMCP
-1. In the **WebMCP Inspector Panel** (bottom/right dock), click the **`inspect_dataset_fields`** trigger or click **Run Step 1**.
-2. Notice the response: a compact JSON summary ($<1.5\text{ KB}$) showing field types, missing values, and cardinality for Palmer Penguins.
+Ask the external agent:
 
-### Step 2: Propose Figure Revision
-1. In the WebMCP Console, select the preset prompt: *"Compare bill length across species with raw distribution points"*.
-2. Click **Execute `propose_figure_revision`**.
-3. Notice that the visible canonical figure **does not change immediately**. Instead, a **Staging Preview Overlay** appears in yellow/purple diff mode with an assigned `previewId` (e.g. `prev_...`).
-4. Look at the **Scientific Validation Badge**: it shows that all blocking rules passed, verifying `showsRawObservations: true`.
+> Inspect the current figure and dataset. Propose a scientifically valid revision for the most relevant panel, preserving individual observations when comparing distributions. Show me the proposal before applying it.
 
-### Step 3: Human Review & Two-Phase Commit
-1. Examine the visual diff in the central canvas.
-2. In the top **Two-Phase Approval Banner**, click **Approve Revision**.
-3. Click **Execute `apply_figure_revision`** in the WebMCP Console (or watch it automatically apply).
-4. The canvas updates to the canonical figure, the revision counter increments from `Rev 0` to `Rev 1`, and a new immutable entry appears in the **Provenance Ledger**.
+The agent should discover and call:
 
----
+1. `inspect_figure_workspace` — identifies every panel, panel kind, dataset, revision, and the panels available to transform.
+2. `inspect_dataset_fields` — returns real field names, types, missingness, cardinality, and bounded examples.
+3. `propose_figure_revision` — stages a non-destructive candidate for a selected panel and returns a `previewId` plus validation evidence.
+4. `apply_figure_revision` — requests browser-native user interaction before committing the staged change.
 
-## 2. Testing Edge Cases & Invariants
+All existing panel kinds remain addressable. A proposal may replace a chart or structured scientific panel, and the resulting figure remains a normal human-editable multipanel workspace.
 
-- **Test Rule Violation**: Propose a distribution chart with `showsRawObservations: false`. Observe the **Blocking Scientific Issue** (`RULE-DIST-RAW`) preventing commitment.
-- **Test Optimistic Concurrency**: Attempt to apply a stale `previewId` after modifying the figure manually. Observe the `status: "rejected_stale"` response.
-- **Test Time-Travel**: Open the **Provenance Ledger** drawer and click any prior revision to instantly restore the figure snapshot.
+## 2. Verify the visible proof
+
+After the proposal, the editor shows a **WebMCP proposal staged for review** strip above the canvas. It names the target panel and preview, reports blocking issues and warnings, and states that native confirmation is required. The canonical figure remains unchanged until approval.
+
+When the external agent invokes `apply_figure_revision`, review the browser's native confirmation interaction. Accepting commits only the requested panel, advances the revision, and records the validation report, preview ID, base revision, target panel, and command payload in the audit ledger. Declining or running without native interaction fails closed.
+
+Use the **History** button in the editor header to inspect the immutable revision entry and expand its exact panel specification. Restore a prior revision from that drawer to demonstrate time-travel provenance.
+
+## 3. Useful judge checks
+
+- Ask the agent to target a different panel kind and verify that the workspace changes in place without touching unrelated panels.
+- Ask for a distribution comparison without raw observations; the deterministic validator should return a blocking issue rather than commit it.
+- Invoke an old `previewId` or stale `basedOnRevision`; the tool should return `rejected_unknown_preview` or `rejected_stale`.
+- Refresh the page to reset the in-memory WebMCP preview state. The optional WebMCP inspector in a local development build is test-only and is not part of the production judging path.
+
+For architecture and the complete schemas, see [`architecture.md`](architecture.md) and [`tool-contracts.md`](tool-contracts.md).
+
+## Submission checklist
+
+- Public repository with the tracked MIT [`LICENSE`](../LICENSE).
+- Public live URL.
+- Short demo or screen recording showing the external browser agent discovering tools, staging a proposal, native approval, and provenance history.
+- No secret or API key is required for the browser-native workflow.

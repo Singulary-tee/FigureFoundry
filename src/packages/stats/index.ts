@@ -1,3 +1,5 @@
+import { studentTwoSidedPValue } from './metaAnalysis';
+
 export interface ColumnStats {
   fieldName: string;
   count: number;
@@ -179,27 +181,26 @@ export function runTwoGroupTtest(
   const dfDenominator = (Math.pow(v1, 2) / (n1 - 1)) + (Math.pow(v2, 2) / (n2 - 1));
   const df = dfDenominator > 0 ? dfNumerator / dfDenominator : n1 + n2 - 2;
 
-  // Approximate p-value using normal distribution approximation for t-stat
   const absT = Math.abs(tStat);
-  const approxP = Math.max(0.00001, 2 * (1 - normalCdf(absT)));
-  const stars = formatSignificanceStars(approxP);
+  const pValue = studentTwoSidedPValue(absT, df);
+  const stars = formatSignificanceStars(pValue);
 
   return {
     testName: "Welch's Two-Sample t-test",
     statisticName: 't',
     statisticValue: Number(tStat.toFixed(3)),
     degreesOfFreedom: Number(df.toFixed(1)),
-    pValue: Number(approxP.toFixed(5)),
+    pValue: Number(pValue.toFixed(5)),
     significanceStars: stars,
     groupStats: [
       { groupName: g1Key, values: g1Vals, ...s1 },
       { groupName: g2Key, values: g2Vals, ...s2 }
     ],
-    summary: `${g1Key} (M=${s1.mean}, SD=${s1.stdDev}, n=${n1}) vs ${g2Key} (M=${s2.mean}, SD=${s2.stdDev}, n=${n2}): t(${df.toFixed(1)}) = ${tStat.toFixed(2)}, p ${approxP < 0.001 ? '< 0.001' : '= ' + approxP.toFixed(3)} (${stars}).`,
+    summary: `${g1Key} (M=${s1.mean}, SD=${s1.stdDev}, n=${n1}) vs ${g2Key} (M=${s2.mean}, SD=${s2.stdDev}, n=${n2}): Welch t(${df.toFixed(1)}) = ${tStat.toFixed(2)}, p ${pValue < 0.001 ? '< 0.001' : '= ' + pValue.toFixed(3)} (${stars}).`,
     recommendedAnnotation: {
       group1: g1Key,
       group2: g2Key,
-      pValue: Number(approxP.toFixed(5)),
+      pValue: Number(pValue.toFixed(5)),
       stars
     }
   };

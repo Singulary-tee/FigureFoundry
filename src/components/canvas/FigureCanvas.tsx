@@ -40,6 +40,7 @@ interface FigureCanvasProps {
   stageRef: React.RefObject<Konva.Stage | null>;
   datasetId?: string;
   isPendingApproval?: boolean;
+  pendingPanelId?: string | null;
   layoutTransitionKey?: number;
 }
 
@@ -64,6 +65,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
   stageRef,
   datasetId,
   isPendingApproval,
+  pendingPanelId,
   layoutTransitionKey = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -541,7 +543,18 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                         letter={panel.letter}
                         theme={activeTheme}
                         datasetId={datasetId}
-                        isPendingApproval={isPendingApproval}
+                        isPendingApproval={isPendingApproval && pendingPanelId === panel.id}
+                      />
+                    )}
+
+                    {(panel.spec.kind === 'volcano-plot' || panel.spec.kind === 'heatmap') && (
+                      <SingleChartKonva
+                        spec={{ kind: 'single-chart', spec: panel.spec.spec }}
+                        frame={panelFrame}
+                        letter={panel.letter}
+                        theme={activeTheme}
+                        datasetId={datasetId}
+                        isPendingApproval={isPendingApproval && pendingPanelId === panel.id}
                       />
                     )}
                   </Group>
