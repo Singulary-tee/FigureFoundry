@@ -122,22 +122,16 @@ export default function App() {
   // Helper to commit state mutation with undo/redo history tracking
   const updateFigureWithHistory = useCallback(
     (updater: (prev: MultiPanelFigure) => MultiPanelFigure) => {
-      setFigure((prev) => {
-        const next = updater(prev);
-        setHistory((prevHist) => {
-          const truncated = prevHist.slice(0, historyIndex + 1);
-          const nextHist = [...truncated, next];
-          if (nextHist.length > 30) {
-            return nextHist.slice(nextHist.length - 30);
-          }
-          return nextHist;
-        });
-        setHistoryIndex((prevIdx) => Math.min(prevIdx + 1, 29));
-        globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: next as any });
-        return next;
-      });
+      if (!figure) return;
+      const next = updater(figure);
+      const truncated = history.slice(0, historyIndex + 1);
+      const nextHistory = [...truncated, next].slice(-30);
+      setFigure(next);
+      setHistory(nextHistory);
+      setHistoryIndex(nextHistory.length - 1);
+      globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: next as any });
     },
-    [historyIndex]
+    [figure, history, historyIndex]
   );
 
   // Undo / Redo handlers

@@ -19,9 +19,13 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
   const padding = 16;
   const colors = theme.colors;
 
-  // Coordinate math for log scale
-  const minVal = spec?.xAxis?.min && spec.xAxis.min > 0 ? spec.xAxis.min : 0.1;
-  const maxVal = spec?.xAxis?.max && spec.xAxis.max > minVal ? spec.xAxis.max : 10;
+  const isLogScale = spec?.xAxis?.scale === 'log';
+  const minVal = isLogScale
+    ? (spec?.xAxis?.min && spec.xAxis.min > 0 ? spec.xAxis.min : 0.1)
+    : (Number.isFinite(spec?.xAxis?.min) ? spec.xAxis.min : -1);
+  const maxVal = Number.isFinite(spec?.xAxis?.max) && spec.xAxis.max > minVal
+    ? spec.xAxis.max
+    : (isLogScale ? 10 : 1);
   const logMin = Math.log10(minVal);
   const logMax = Math.log10(maxVal);
   const logDiff = logMax - logMin > 0 ? logMax - logMin : 1;
@@ -31,10 +35,11 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
   const plotWidth = Math.max(50, plotRight - plotLeft);
 
   const mapX = (val: number) => {
-    if (val == null || isNaN(val) || val <= 0) return plotLeft;
+    if (val == null || !Number.isFinite(val) || (isLogScale && val <= 0)) return plotLeft;
     const clamped = Math.max(minVal, Math.min(maxVal, val));
-    const logVal = Math.log10(clamped);
-    const frac = (logVal - logMin) / logDiff;
+    const frac = isLogScale
+      ? (Math.log10(clamped) - logMin) / logDiff
+      : (clamped - minVal) / (maxVal - minVal);
     return plotLeft + frac * plotWidth;
   };
 
@@ -250,8 +255,8 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
             strokeWidth={1}
           />
 
-          {/* Ticks: 0.1, 0.5, 1, 2, 5, 10 */}
-          {[0.1, 0.5, 1, 2, 5, 10].map((tickVal) => {
+          {/* Ratio measures use familiar log ticks; differences use a linear scale. */}
+          {(isLogScale ? [0.1, 0.5, 1, 2, 5, 10] : Array.from({ length: 5 }, (_, index) => minVal + ((maxVal - minVal) * index) / 4)).map((tickVal) => {
             const tickX = mapX(tickVal);
             return (
               <Group key={tickVal}>
@@ -265,7 +270,7 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
                     x={tickX - 12}
                     y={axisY + 7}
                     width={24}
-                    text={String(tickVal)}
+                    text={isLogScale ? String(tickVal) : tickVal.toFixed(2)}
                     fontSize={10.5}
                     fontFamily="system-ui, -apple-system, sans-serif"
                     fill={colors.text}

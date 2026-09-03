@@ -4,6 +4,7 @@ import { DomainCommand } from './commands';
 import { domainReducer } from './reducer';
 import { FigureProject, ExportBundle } from '../../types';
 import { loadDomainState } from './persistence';
+import { saveDomainState } from './persistence';
 
 export type StoreListener = (state: DomainState) => void;
 
@@ -21,6 +22,7 @@ export class DomainStore {
 
   public dispatch(command: DomainCommand): void {
     this.state = domainReducer(this.state, command);
+    saveDomainState(this.state);
     this.notify();
   }
 
@@ -64,7 +66,18 @@ export const globalFigureStore = {
     return cachedSnapshot;
   },
   dispatch: (action: any) => {
-    if (action.type === 'APPLY_PROPOSAL' || action.type === 'PROPOSE_SPEC') {
+    if (action.type === 'APPROVE_PREVIEW_UI') {
+      globalDomainStore.dispatch(action);
+    } else if (action.type === 'APPLY_PROPOSAL') {
+      const state = globalDomainStore.getState();
+      const approval = action.payload?.approval;
+      if (
+        !state.activePreview ||
+        !state.activePreview.approvedInUI ||
+        approval?.previewId !== state.activePreview.previewId
+      ) {
+        return;
+      }
       globalDomainStore.dispatch({
         type: 'APPLY_PROPOSAL',
         payload: {
@@ -73,8 +86,12 @@ export const globalFigureStore = {
           commitMessage: action.payload?.commitMessage || 'Applied WebMCP agent action',
           workspacePatch: action.payload?.workspacePatch,
           provenance: action.payload?.provenance,
+          approval,
         },
       });
+    } else if (action.type === 'PROPOSE_SPEC') {
+      // Legacy direct-commit callers are intentionally inert; proposals must be staged.
+      return;
     } else if (action.type === 'SET_PREVIEW' || action.type === 'CLEAR_PREVIEW') {
       globalDomainStore.dispatch(action as any);
     } else if (action.type === 'RESTORE_SNAPSHOT') {

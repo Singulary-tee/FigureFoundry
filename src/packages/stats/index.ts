@@ -45,8 +45,16 @@ export interface StatisticalTestResult {
   };
 }
 
+/** Treat blank and null cells as missing rather than numeric zero. */
+export function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 export function calculateColumnStats(values: number[], fieldName: string): ColumnStats {
-  const validValues = values.filter(v => typeof v === 'number' && !isNaN(v));
+  const validValues = values.filter(v => Number.isFinite(v));
   const n = validValues.length;
 
   if (n === 0) {
@@ -127,17 +135,34 @@ export function runTwoGroupTtest(
   const groupsMap = new Map<string, number[]>();
 
   for (const r of records) {
-    const grp = String(r[groupField]);
-    const val = Number(r[valueField]);
-    if (grp !== undefined && grp !== 'null' && grp !== 'undefined' && !isNaN(val)) {
+    const rawGroup = r[groupField];
+    const val = toFiniteNumber(r[valueField]);
+    if (rawGroup !== null && rawGroup !== undefined && String(rawGroup).trim() && val !== null) {
+      const grp = String(rawGroup);
       if (!groupsMap.has(grp)) groupsMap.set(grp, []);
       groupsMap.get(grp)!.push(val);
     }
   }
 
   const keys = Array.from(groupsMap.keys());
-  const g1Key = group1Val && groupsMap.has(group1Val) ? group1Val : keys[0] || 'Group A';
-  const g2Key = group2Val && groupsMap.has(group2Val) ? group2Val : keys[1] || 'Group B';
+  if (keys.length < 2) {
+    throw new Error(`At least two groups with finite observations are required; found ${keys.length}.`);
+  }
+
+  const requestedGroup1 = group1Val === undefined ? undefined : String(group1Val);
+  const requestedGroup2 = group2Val === undefined ? undefined : String(group2Val);
+  if (requestedGroup1 !== undefined && !groupsMap.has(requestedGroup1)) {
+    throw new Error(`Requested group '${requestedGroup1}' was not found in ${groupField}.`);
+  }
+  if (requestedGroup2 !== undefined && !groupsMap.has(requestedGroup2)) {
+    throw new Error(`Requested group '${requestedGroup2}' was not found in ${groupField}.`);
+  }
+
+  const g1Key = requestedGroup1 || keys[0];
+  const g2Key = requestedGroup2 || keys.find((key) => key !== g1Key) || keys[1];
+  if (g1Key === g2Key) {
+    throw new Error('The two comparison groups must be different.');
+  }
 
   const g1Vals = groupsMap.get(g1Key) || [];
   const g2Vals = groupsMap.get(g2Key) || [];
@@ -215,9 +240,9 @@ export function runPearsonCorrelation(
   const yVals: number[] = [];
 
   for (const r of records) {
-    const x = Number(r[xField]);
-    const y = Number(r[yField]);
-    if (!isNaN(x) && !isNaN(y)) {
+    const x = toFiniteNumber(r[xField]);
+    const y = toFiniteNumber(r[yField]);
+    if (x !== null && y !== null) {
       xVals.push(x);
       yVals.push(y);
     }

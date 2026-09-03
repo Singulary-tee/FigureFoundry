@@ -2,7 +2,7 @@
 
 > **Decision-Aware Scientific Figure Workbench with WebMCP Semantic Tool Contracts**
 
-FigureFoundry bridges the gap between AI generation and scientific rigor. Instead of fragile pixel actuation or raw DOM automation, FigureFoundry exposes structured **WebMCP semantic tools** directly into the browser runtime, enforcing deterministic scientific validation, two-phase review, and complete provenance tracking.
+FigureFoundry bridges the gap between AI generation and scientific rigor. Instead of fragile pixel actuation or raw DOM automation, FigureFoundry exposes structured **WebMCP semantic tools** directly into the browser runtime, enforcing deterministic scientific validation, two-phase review, and persisted provenance tracking.
 
 ---
 
@@ -22,8 +22,8 @@ FigureFoundry bridges the gap between AI generation and scientific rigor. Instea
    - Agent proposals are staged as transient `previewId` overlays with visible validation evidence before canonical state changes.
    - The external browser agent requests native user interaction before the targeted panel is committed; the researcher keeps the final editorial veto.
 
-4. **Audit-Grade Provenance Ledger**
-   - Full history graph tracking every modification, actor tag (`agent` vs. `human`), timestamp, target panel, preview/base revision, validation report, command payload, and exact panel snapshots with one-click time-travel replay.
+4. **Provenance Ledger**
+   - History tracking for modifications, actor tags (`agent` vs. `human`), timestamps, target panels, preview/base revisions, validation reports, command payloads, and exact panel snapshots with one-click time-travel replay.
 
 5. **External-Agent-First Integration**
    - Production uses the browser-native `modelContext` surface, so Chrome or the ChatGPT desktop browser agent discovers and invokes FigureFoundry tools in the live page.
@@ -47,16 +47,7 @@ Expected confirmation point: `agent.requestUserInteraction()` inside `apply_figu
 
 Fallback behavior: if WebMCP is unavailable, every control used above is also reachable manually via the Design tab on the same panel — the app is fully functional without an agent.
 
-Reset: Refresh the page; WebMCP session state is in-memory only.
-
----
-
-## Documentation Directory
-
-- [`docs/architecture.md`](docs/architecture.md) — System architecture, 5 invariants, and state flow.
-- [`docs/tool-contracts.md`](docs/tool-contracts.md) — Full WebMCP JSON schemas, payload budgets, and AX patterns.
-- [`docs/scientific-method.md`](docs/scientific-method.md) — Scientific visualization principles and validation rule catalog.
-- [`docs/judge-quickstart.md`](docs/judge-quickstart.md) — 2-minute evaluation walkthrough for reviewers.
+Reset: Refresh the page; the committed workspace and provenance history are restored from local storage, while pending previews and the WebMCP connection are session-scoped.
 
 ---
 
