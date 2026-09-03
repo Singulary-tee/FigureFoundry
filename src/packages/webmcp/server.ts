@@ -334,16 +334,6 @@ export class WebMcpServer {
             } catch (e) {
               confirmationUnavailable = true;
             }
-          } else if (
-            import.meta.env.DEV &&
-            typeof window !== 'undefined' &&
-            typeof (window as any).__FIGURE_FOUNDRY_TEST_CONFIRMATION__ === 'function'
-          ) {
-            try {
-              userConfirmed = Boolean(await (window as any).__FIGURE_FOUNDRY_TEST_CONFIRMATION__(confirmMessage));
-            } catch (e) {
-              confirmationUnavailable = true;
-            }
           } else {
             confirmationUnavailable = true;
           }
@@ -372,6 +362,7 @@ export class WebMcpServer {
             previewId: inputArgs.previewId,
             basedOnRevision: inputArgs.basedOnRevision,
             humanApprovalConfirmed: true,
+            approvalToken: inputArgs.previewId,
             actor,
           });
 

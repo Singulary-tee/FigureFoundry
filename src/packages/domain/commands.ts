@@ -42,8 +42,10 @@ export type DomainCommand =
           panelId: string;
           workspacePatch?: WorkspacePatch;
         };
+        approval?: { previewId: string };
       };
     }
+  | { type: 'APPROVE_PREVIEW_UI'; payload: { previewId: string } }
   | { type: 'RESTORE_SNAPSHOT'; payload: { targetRevision: number } }
   | { type: 'SET_PREVIEW'; payload: { preview: any } }
   | { type: 'CLEAR_PREVIEW' }
@@ -189,7 +191,11 @@ export function applyFigureRevision(store: any, params: any) {
     };
   }
 
-  if (!params.humanApprovalConfirmed) {
+  if (
+    !params.humanApprovalConfirmed ||
+    params.approvalToken !== preview.previewId ||
+    !preview.approvedInUI
+  ) {
     return {
       success: false,
       result: {
@@ -224,6 +230,7 @@ export function applyFigureRevision(store: any, params: any) {
         panelId: preview.panelId,
         workspacePatch: preview.workspacePatch,
       },
+      approval: { previewId: preview.previewId },
     },
   });
   store.dispatch({ type: 'CLEAR_PREVIEW' });

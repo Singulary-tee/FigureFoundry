@@ -366,8 +366,7 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
           JSON.stringify(
             {
               previewId: currentState.activePreview?.previewId || 'prev_sample_123',
-              basedOnRevision: currentState.currentRevision,
-              humanApprovalConfirmed: true
+              basedOnRevision: currentState.currentRevision
             },
             null,
             2

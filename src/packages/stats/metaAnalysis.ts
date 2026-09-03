@@ -261,7 +261,30 @@ export function runMetaAnalysis(
   const isLogScale = !['Mean Difference (MD)', 'Risk Difference (RD)'].includes(effectMeasure);
   const isRandomEffects = model === 'IV, Random Effects' || model === 'DerSimonian-Laird';
 
-  const validStudies = rawStudies.filter((s) => s.effect > 0 && s.ciLower > 0 && s.ciUpper > 0);
+  const normalizedStudies = rawStudies.map((study) => {
+    if (
+      study.eventsTreatment !== undefined &&
+      study.totalTreatment !== undefined &&
+      study.eventsControl !== undefined &&
+      study.totalControl !== undefined
+    ) {
+      const computed = computeFromContingency(
+        study.eventsTreatment,
+        study.totalTreatment,
+        study.eventsControl,
+        study.totalControl
+      );
+      return { ...study, effect: computed.or, ciLower: computed.ciLower, ciUpper: computed.ciUpper };
+    }
+    return study;
+  });
+  const validStudies = normalizedStudies.filter((s) =>
+    Number.isFinite(s.effect) &&
+    Number.isFinite(s.ciLower) &&
+    Number.isFinite(s.ciUpper) &&
+    s.ciUpper > s.ciLower &&
+    (isLogScale ? s.effect > 0 && s.ciLower > 0 && s.ciUpper > 0 : true)
+  );
   const k = validStudies.length;
 
   if (k === 0) {
@@ -271,9 +294,9 @@ export function runMetaAnalysis(
       k: 0,
       studies: [],
       pooledEstimate: {
-        effect: 1.0,
-        ciLower: 1.0,
-        ciUpper: 1.0,
+        effect: isLogScale ? 1.0 : 0,
+        ciLower: isLogScale ? 1.0 : 0,
+        ciUpper: isLogScale ? 1.0 : 0,
         weightTotal: 0,
         label: 'Total (95% CI)',
         zScore: 0,
@@ -295,23 +318,6 @@ export function runMetaAnalysis(
     let effect = s.effect;
     let ciLower = s.ciLower;
     let ciUpper = s.ciUpper;
-
-    if (
-      s.eventsTreatment !== undefined &&
-      s.totalTreatment !== undefined &&
-      s.eventsControl !== undefined &&
-      s.totalControl !== undefined
-    ) {
-      const computed = computeFromContingency(
-        s.eventsTreatment,
-        s.totalTreatment,
-        s.eventsControl,
-        s.totalControl
-      );
-      effect = computed.or;
-      ciLower = computed.ciLower;
-      ciUpper = computed.ciUpper;
-    }
 
     const se = computeStandardError(effect, ciLower, ciUpper, isLogScale);
     const theta = isLogScale ? Math.log(effect) : effect;
@@ -421,17 +427,18 @@ export function runMetaAnalysis(
  * Generate Funnel Plot Points & Confidence Limits based on Meta-Analysis Studies
  */
 export function generateFunnelPlotData(metaResult: MetaAnalysisResult) {
-  const pooledLogEffect = Math.log(metaResult.pooledEstimate.effect);
+  const isLogScale = !['Mean Difference (MD)', 'Risk Difference (RD)'].includes(metaResult.effectMeasure);
+  const pooledCenter = isLogScale ? Math.log(metaResult.pooledEstimate.effect) : metaResult.pooledEstimate.effect;
 
   const points = metaResult.studies.map((s) => ({
     id: `fp-${s.id}`,
     study: s.study,
-    effect: Number((s.logEffect - pooledLogEffect).toFixed(2)), // centered on pooled OR
+    effect: Number((s.logEffect - pooledCenter).toFixed(2)),
     standardError: s.standardError,
   }));
 
   return {
-    pooledLogEffect,
+    pooledLogEffect: pooledCenter,
     points,
   };
 }

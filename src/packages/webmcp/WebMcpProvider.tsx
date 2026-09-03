@@ -36,7 +36,11 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
 
   const customToolsRef = useRef<Map<string, { definition: WebMcpToolDefinition; executeFn?: (args: any) => Promise<any> }>>(new Map());
   const [, setVersion] = useState(0);
-  const nativeRegistrationRef = useRef<{ context: any; names: Set<string> }>({ context: null, names: new Set() });
+  const nativeRegistrationRef = useRef<{
+    context: any;
+    names: Set<string>;
+    controller?: AbortController;
+  }>({ context: null, names: new Set() });
 
   // Keep a stable server instance across renders; it reads fresh state via getState().
   const dispatchRef = useRef(dispatchDomainAction);
@@ -183,34 +187,14 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
     setIsNativeSupported(isNative);
 
     if (modelContext?.registerTool) {
-      // The polyfill wrapper is recreated by the effect; native modelContext is not.
-      // Keep the registration set across wrapper recreation so native hosts do not
-      // receive duplicate tool names during state updates or StrictMode effects.
-      if (!isNative && nativeRegistrationRef.current.context !== modelContext) {
-        nativeRegistrationRef.current = { context: modelContext, names: new Set() };
-      }
-      let registration = nativeRegistrationRef.current;
-      if (isNative && typeof window !== 'undefined') {
-        const appWindow = window as any;
-        // Native modelContext may be returned through a new proxy on every read.
-        // Keep this page-lifetime registry independent of proxy identity.
-        if (!appWindow.__FIGURE_FOUNDRY_NATIVE_WEBMCP_REGISTRY__) {
-          appWindow.__FIGURE_FOUNDRY_NATIVE_WEBMCP_REGISTRY__ = { context: modelContext, names: new Set<string>() };
-        }
-        registration = appWindow.__FIGURE_FOUNDRY_NATIVE_WEBMCP_REGISTRY__;
-      }
-      const desiredNames = new Set(registeredTools.map((tool) => tool.name));
-      registration.names.forEach((name) => {
-        if (desiredNames.has(name)) return;
-        try {
-          modelContext.unregisterTool?.(name);
-        } catch {
-          // Hosts without unregister support will replace the page context on navigation.
-        }
-        registration.names.delete(name);
-      });
+      const registration = {
+        context: modelContext,
+        names: new Set<string>(),
+        controller: isNative ? new AbortController() : undefined,
+      };
+      nativeRegistrationRef.current = registration;
+
       registeredTools.forEach(tool => {
-        if (registration.names.has(tool.name)) return;
         registration.names.add(tool.name);
         try {
           const registrationResult = modelContext.registerTool({
@@ -223,7 +207,7 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
               const res = await executeTool(tool.name, args, 'agent', agent);
               return res.result;
             }
-          });
+          }, registration.controller ? { signal: registration.controller.signal } : undefined);
           Promise.resolve(registrationResult).catch(() => registration.names.delete(tool.name));
         } catch {
           registration.names.delete(tool.name);
@@ -233,15 +217,32 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
       try {
         if (modelContext.provideContext) {
           modelContext.provideContext({
-            datasetId: currentState.datasetId,
-            currentRevision: currentState.currentRevision,
-            spec: currentState.spec,
-            activePreview: currentState.activePreview
+            datasetId: stateRef.current.datasetId,
+            currentRevision: stateRef.current.currentRevision,
+            spec: stateRef.current.spec,
+            activePreview: stateRef.current.activePreview
           });
         }
       } catch (e) {}
+
+      return () => {
+        if (registration.controller) {
+          registration.controller.abort();
+        } else {
+          registration.names.forEach((name) => {
+            try {
+              modelContext.unregisterTool?.(name);
+            } catch {
+              // Polyfill cleanup is best effort.
+            }
+          });
+        }
+        if (nativeRegistrationRef.current === registration) {
+          nativeRegistrationRef.current = { context: null, names: new Set() };
+        }
+      };
     }
-  }, [autoRegisterBrowser, registeredTools, currentState, executeTool]);
+  }, [autoRegisterBrowser, registeredTools, executeTool]);
 
   useEffect(() => {
     if (!enablePostMessageTransport) return;

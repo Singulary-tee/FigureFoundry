@@ -475,8 +475,25 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
       };
     }
 
+    case 'APPROVE_PREVIEW_UI': {
+      if (!state.activePreview || state.activePreview.previewId !== command.payload.previewId) return state;
+      return {
+        ...state,
+        activePreview: { ...state.activePreview, approvedInUI: true },
+      };
+    }
+
     case 'APPLY_PROPOSAL': {
       const { panelId, spec, commitMessage, workspacePatch, provenance: provenanceMetadata } = command.payload;
+      if (
+        !state.activePreview ||
+        !state.activePreview.approvedInUI ||
+        !command.payload.approval ||
+        command.payload.approval.previewId !== state.activePreview.previewId ||
+        provenanceMetadata?.previewId !== state.activePreview.previewId
+      ) {
+        return state;
+      }
       const patchByPanelId = new Map((workspacePatch?.panelChanges || []).map((change) => [change.panelId, change]));
       const updatedPanels = state.figure.panels.map((p) => {
         const change = patchByPanelId.get(p.id);

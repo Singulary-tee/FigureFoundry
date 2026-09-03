@@ -2,7 +2,7 @@ import { DomainState, INITIAL_DOMAIN_STATE } from './state';
 
 const DOMAIN_STATE_KEY = 'figurefoundry_domain_state_v1';
 
-/** Persist human-managed catalog membership without persisting WebMCP session state. */
+/** Persist catalog and provenance; a pending WebMCP proposal remains session-scoped. */
 export function loadDomainState(): DomainState {
   if (typeof window === 'undefined') return INITIAL_DOMAIN_STATE;
   try {
@@ -17,6 +17,9 @@ export function loadDomainState(): DomainState {
       projects: saved.projects || INITIAL_DOMAIN_STATE.projects,
       figures: saved.figures || INITIAL_DOMAIN_STATE.figures,
       datasets: saved.datasets || INITIAL_DOMAIN_STATE.datasets,
+      provenance: saved.provenance || INITIAL_DOMAIN_STATE.provenance,
+      activePreview: null,
+      isWebMcpConnected: INITIAL_DOMAIN_STATE.isWebMcpConnected,
     };
   } catch {
     return INITIAL_DOMAIN_STATE;
@@ -26,7 +29,7 @@ export function loadDomainState(): DomainState {
 export function saveDomainState(state: DomainState): void {
   if (typeof window === 'undefined') return;
   try {
-    const { provenance, activePreview, isWebMcpConnected, ...persisted } = state;
+    const { activePreview, isWebMcpConnected, ...persisted } = state;
     localStorage.setItem(DOMAIN_STATE_KEY, JSON.stringify(persisted));
   } catch {
     // Storage is best effort; the in-memory state remains authoritative.

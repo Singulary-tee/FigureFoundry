@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { MultiPanelFigure, ForestPlotSpec, FunnelPlotSpec } from '../../types/multipanel';
 import { runMetaAnalysis, generateFunnelPlotData, studentTwoSidedPValue } from '../../packages/stats/metaAnalysis';
+import { runPearsonCorrelation } from '../../packages/stats';
 import { profileDataset } from '../../packages/data-model/profiler';
 
 interface AnalysesViewProps {
@@ -53,8 +54,11 @@ export const AnalysesView: React.FC<AnalysesViewProps> = ({
   const biasStats = useMemo(() => {
     if (!metaResult || metaResult.studies.length < 3) return null;
     const n = metaResult.studies.length;
-    const effects = metaResult.studies.map((s) => Math.log(Math.max(s.effect, 0.001)));
-    const ses = metaResult.studies.map((s) => (Math.log(Math.max(s.ciUpper, 0.002)) - Math.log(Math.max(s.ciLower, 0.001))) / (2 * 1.96));
+    const isLogScale = !['Mean Difference (MD)', 'Risk Difference (RD)'].includes(metaResult.effectMeasure);
+    const effects = metaResult.studies.map((s) => isLogScale ? Math.log(s.effect) : s.effect);
+    const ses = metaResult.studies.map((s) => isLogScale
+      ? (Math.log(s.ciUpper) - Math.log(s.ciLower)) / (2 * 1.96)
+      : (s.ciUpper - s.ciLower) / (2 * 1.96));
     const precisions = ses.map((se) => 1 / Math.max(se, 0.001));
     const snds = effects.map((eff, i) => eff / Math.max(ses[i], 0.001));
 
@@ -97,30 +101,13 @@ export const AnalysesView: React.FC<AnalysesViewProps> = ({
 
     names.forEach((rowName) => {
       matrix[rowName] = {};
-      const rowVals = records.map((r) => Number(r[rowName])).filter((v) => !isNaN(v));
-      const rowMean = rowVals.reduce((a, b) => a + b, 0) / (rowVals.length || 1);
 
       names.forEach((colName) => {
         if (rowName === colName) {
           matrix[rowName][colName] = 1.0;
           return;
         }
-        const colVals = records.map((r) => Number(r[colName])).filter((v) => !isNaN(v));
-        const colMean = colVals.reduce((a, b) => a + b, 0) / (colVals.length || 1);
-
-        let num = 0;
-        let denA = 0;
-        let denB = 0;
-        const count = Math.min(rowVals.length, colVals.length);
-        for (let i = 0; i < count; i++) {
-          const diffA = rowVals[i] - rowMean;
-          const diffB = colVals[i] - colMean;
-          num += diffA * diffB;
-          denA += diffA ** 2;
-          denB += diffB ** 2;
-        }
-        const denom = Math.sqrt(denA * denB);
-        matrix[rowName][colName] = denom === 0 ? 0 : Number((num / denom).toFixed(3));
+        matrix[rowName][colName] = runPearsonCorrelation(records, rowName, colName).r;
       });
     });
 

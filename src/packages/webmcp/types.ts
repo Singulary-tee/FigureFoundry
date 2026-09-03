@@ -33,6 +33,10 @@ export interface NativeWebMcpTool {
   execute?: (params: Record<string, any>, agent?: WebMcpAgent) => Promise<any> | any;
 }
 
+export interface NativeWebMcpRegistrationOptions {
+  signal?: AbortSignal;
+}
+
 export interface WebMcpAgent {
   requestUserInteraction: <T>(
     callback: () => Promise<T> | T
@@ -40,7 +44,7 @@ export interface WebMcpAgent {
 }
 
 export interface BrowserModelContext {
-  registerTool: (tool: NativeWebMcpTool) => void | Promise<void>;
+  registerTool: (tool: NativeWebMcpTool, options?: NativeWebMcpRegistrationOptions) => void | Promise<void>;
   unregisterTool?: (name: string) => void | Promise<void>;
   provideContext?: (context: Record<string, any>) => void | Promise<void>;
   clearContext?: () => void | Promise<void>;
