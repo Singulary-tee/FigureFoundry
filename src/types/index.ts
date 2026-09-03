@@ -100,7 +100,7 @@ export interface FigurePreview {
   approval?: {
     approvedAt: number;
     approvedBy: 'human';
-    source: 'native-confirmation';
+    source: 'native-confirmation' | 'inapp-modal';
   };
   actor: 'agent' | 'human';
   panelKind?: string;
@@ -120,7 +120,7 @@ export interface ProvenanceEvent {
   approval?: {
     approvedAt: number;
     approvedBy: 'human';
-    source: 'native-confirmation';
+    source: 'native-confirmation' | 'inapp-modal';
   };
   basedOnRevision: number;
   specSnapshot: FigureSpec | Record<string, any>;

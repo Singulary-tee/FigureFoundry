@@ -47,8 +47,11 @@ import { SettingsView } from './components/views/SettingsView';
 import { HelpView } from './components/views/HelpView';
 import { ProvenanceDrawer } from './components/ProvenanceDrawer';
 import { ProposalReviewBanner } from './components/ProposalReviewBanner';
+import { ProposalConfirmationModal } from './components/ProposalConfirmationModal';
+import { applyFigureRevision } from './packages/domain/commands';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './components/ui/dialog';
 import { WebMcpDevPanel } from './components/WebMcpDevPanel';
-import { Sliders } from 'lucide-react';
+import { Sliders, AlertTriangle } from 'lucide-react';
 import { saveDomainState } from './packages/domain/persistence';
 
 export default function App() {
@@ -675,10 +678,12 @@ export default function App() {
     return null;
   };
 
+  const [exportBlockError, setExportBlockError] = useState<string | null>(null);
+
   const blockExport = (targetPanelId?: string) => {
     const reason = getExportBlockReason(targetPanelId);
     if (reason) {
-      window.alert(`Export blocked: ${reason} Resolve the panel validation state before exporting.`);
+      setExportBlockError(`Export blocked: ${reason} Resolve the panel validation state before exporting.`);
       return true;
     }
     return false;
@@ -750,10 +755,63 @@ export default function App() {
   ) as any;
 
   const customDispatch = useCallback((action: any) => {
-    if (action.type === 'APPLY_PROPOSAL' || action.type === 'PROPOSE_SPEC') {
+    if (
+      action.type === 'APPLY_PROPOSAL' ||
+      action.type === 'PROPOSE_SPEC' ||
+      action.type === 'APPROVE_PREVIEW_UI' ||
+      action.type === 'CLEAR_PREVIEW'
+    ) {
       return globalFigureStore.dispatch(action);
     }
     return globalDomainStore.dispatch(action);
+  }, []);
+
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+
+  const confirmHandler = useCallback((_details: any): Promise<boolean> => {
+    return new Promise<boolean>((resolve) => {
+      confirmationResolverRef.current = resolve;
+      setIsReviewModalOpen(true);
+    });
+  }, []);
+
+  const handleConfirmProposal = useCallback(() => {
+    if (!figureState.activePreview) return;
+    const prev = figureState.activePreview;
+    customDispatch({
+      type: 'APPROVE_PREVIEW_UI',
+      payload: { previewId: prev.previewId, source: 'inapp-modal' },
+    });
+    applyFigureRevision(globalFigureStore, {
+      previewId: prev.previewId,
+      basedOnRevision: prev.basedOnRevision,
+      humanApprovalConfirmed: true,
+      approvalToken: prev.previewId,
+      actor: 'human',
+    });
+    if (confirmationResolverRef.current) {
+      confirmationResolverRef.current(true);
+      confirmationResolverRef.current = null;
+    }
+    setIsReviewModalOpen(false);
+  }, [figureState.activePreview, customDispatch]);
+
+  const handleDiscardProposal = useCallback(() => {
+    customDispatch({ type: 'CLEAR_PREVIEW' });
+    if (confirmationResolverRef.current) {
+      confirmationResolverRef.current(false);
+      confirmationResolverRef.current = null;
+    }
+    setIsReviewModalOpen(false);
+  }, [customDispatch]);
+
+  const handleCancelProposal = useCallback(() => {
+    if (confirmationResolverRef.current) {
+      confirmationResolverRef.current(false);
+      confirmationResolverRef.current = null;
+    }
+    setIsReviewModalOpen(false);
   }, []);
 
   // The domain store is authoritative for agent commits as well as figure switches.
@@ -786,6 +844,7 @@ export default function App() {
         datasets: accessibleDatasets,
       }}
       dispatchDomainAction={customDispatch}
+      confirmHandler={confirmHandler}
     >
       <div className="flex flex-col h-screen w-screen bg-[#f8f9fa] dark:bg-[#121212] text-[#18181b] dark:text-[#EDEDED] font-sans antialiased overflow-hidden select-none transition-colors">
         {/* Top Navigation Bar */}
@@ -912,7 +971,11 @@ export default function App() {
                   onTidyLayout={handleTidyLayout}
                 />
 
-                <ProposalReviewBanner preview={figureState.activePreview} />
+                <ProposalReviewBanner
+                  preview={figureState.activePreview}
+                  onReviewAndConfirm={() => setIsReviewModalOpen(true)}
+                  onDiscard={handleDiscardProposal}
+                />
 
                 {/* Stage Canvas */}
                 <div className="flex-1 min-h-0 relative flex">
@@ -1072,6 +1135,55 @@ export default function App() {
             window.setTimeout(() => setRestoreMessage(null), 3500);
           }}
         />
+
+        {/* WebMCP Proposal Confirmation Modal (In-App) */}
+        {figureState.activePreview && (
+          <ProposalConfirmationModal
+            isOpen={isReviewModalOpen}
+            onOpenChange={(open) => {
+              if (!open) handleCancelProposal();
+            }}
+            details={{
+              previewId: figureState.activePreview.previewId,
+              targetPanelId: figureState.activePreview.panelId || selectedPanelId || 'panel-a',
+              title:
+                figureState.activePreview.proposedSpec?.title ||
+                figureState.activePreview.proposedSpec?.spec?.title ||
+                'Untitled figure',
+              panelKind: figureState.activePreview.panelKind,
+              basedOnRevision: figureState.activePreview.basedOnRevision,
+              preview: figureState.activePreview,
+            }}
+            onConfirm={handleConfirmProposal}
+            onDiscard={handleDiscardProposal}
+            onCancel={handleCancelProposal}
+          />
+        )}
+
+        {/* Export Blocked Modal */}
+        {exportBlockError && (
+          <Dialog open={Boolean(exportBlockError)} onOpenChange={(open) => !open && setExportBlockError(null)}>
+            <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 text-zinc-900 dark:text-zinc-100">
+              <DialogHeader>
+                <DialogTitle className="text-sm font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" /> Export Blocked
+                </DialogTitle>
+                <DialogDescription className="text-xs text-zinc-600 dark:text-zinc-300 mt-2">
+                  {exportBlockError}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setExportBlockError(null)}
+                  className="px-3 py-1.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded text-zinc-800 dark:text-zinc-200"
+                >
+                  Dismiss
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* WebMCP Dev Panel */}
         {import.meta.env.DEV && (

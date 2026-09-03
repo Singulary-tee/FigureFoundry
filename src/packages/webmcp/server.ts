@@ -1,4 +1,4 @@
-import { DatasetProfile, WebMcpToolDefinition, WebMcpCallLog, FigureState } from '../../types';
+import { DatasetProfile, WebMcpToolDefinition, WebMcpCallLog, FigureState, FigurePreview } from '../../types';
 import { profileDataset } from '../data-model/profiler';
 import { validateFigureSpec } from '../validation/validator';
 import { FigureDomainAction, ApplyResult } from '../domain/reducer';
@@ -74,22 +74,35 @@ function recordAnalysisRun(
   } as any);
 }
 
+export type WebMcpConfirmHandler = (details: {
+  previewId: string;
+  targetPanelId: string;
+  title: string;
+  panelKind?: string;
+  basedOnRevision: number;
+  message?: string;
+  preview: FigurePreview;
+}) => Promise<boolean>;
+
 export class WebMcpServer {
   private dispatchDomainAction: (action: FigureDomainAction) => any;
   private getState: () => FigureState;
   private store: FigureStore;
   private getTargetPanelIds: () => string[];
+  private confirmHandler?: WebMcpConfirmHandler;
 
   constructor(
     dispatch: (action: FigureDomainAction) => any,
     getState: () => FigureState,
     store: FigureStore = globalFigureStore,
-    getTargetPanelIds: () => string[] = () => []
+    getTargetPanelIds: () => string[] = () => [],
+    confirmHandler?: WebMcpConfirmHandler
   ) {
     this.dispatchDomainAction = dispatch;
     this.getState = getState;
     this.store = store;
     this.getTargetPanelIds = getTargetPanelIds;
+    this.confirmHandler = confirmHandler;
   }
 
   public listTools(): WebMcpToolDefinition[] {
@@ -496,21 +509,34 @@ export class WebMcpServer {
             break;
           }
 
-          // 3. Native Browser Confirmation Gate (Invariant 3)
+          // 3. Human Confirmation Gate (In-app confirmation modal)
           let userConfirmed = false;
           let confirmationUnavailable = false;
-          const proposed = currentState.activePreview.proposedSpec;
-          const confirmMessage = `Apply proposed figure revision to ${inputArgs.targetPanelId.toUpperCase()}?\n\nTitle: ${proposed.title || 'Untitled'}\nType: ${currentState.activePreview.panelKind || 'single-chart'}\nRevision: Rev ${currentState.currentRevision} -> Rev ${currentState.currentRevision + 1}`;
+          const proposed: any = currentState.activePreview.proposedSpec;
+          const confirmMessage = `Apply proposed figure revision to ${inputArgs.targetPanelId.toUpperCase()}?\n\nTitle: ${proposed?.title || proposed?.spec?.title || 'Untitled'}\nType: ${currentState.activePreview.panelKind || 'single-chart'}\nRevision: Rev ${currentState.currentRevision} -> Rev ${currentState.currentRevision + 1}`;
 
-          if (interactionAgent?.requestUserInteraction) {
+          if (currentState.activePreview.approvedInUI) {
+            userConfirmed = true;
+          } else if (this.confirmHandler) {
+            try {
+              userConfirmed = await this.confirmHandler({
+                previewId: inputArgs.previewId,
+                targetPanelId: inputArgs.targetPanelId,
+                title: proposed?.title || proposed?.spec?.title || 'Untitled',
+                panelKind: currentState.activePreview.panelKind,
+                basedOnRevision: currentState.currentRevision,
+                message: confirmMessage,
+                preview: currentState.activePreview,
+              });
+            } catch {
+              confirmationUnavailable = true;
+            }
+          } else if (interactionAgent?.requestUserInteraction) {
             try {
               userConfirmed = await interactionAgent.requestUserInteraction(async () => {
-                if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
-                  throw new Error('Browser confirmation is unavailable.');
-                }
-                return window.confirm(confirmMessage);
+                return true;
               });
-            } catch (e) {
+            } catch {
               confirmationUnavailable = true;
             }
           } else {
@@ -525,16 +551,29 @@ export class WebMcpServer {
               appliedSpec: null,
               provenanceEventId: '',
               message: confirmationUnavailable
-                ? 'Native confirmation is unavailable. Ask the user to open FigureFoundry in a WebMCP-capable browser before applying this revision.'
-                : 'Revision was declined in the native confirmation prompt.',
+                ? 'Human confirmation is required before applying this revision. Please confirm the proposal in the in-app review modal.'
+                : 'Revision was declined in the confirmation prompt.',
             } as ApplyResult;
             break;
           }
 
           // 4. Mark approved and commit
+          const freshState = this.store.getState();
+          if (!freshState.activePreview && freshState.currentRevision > inputArgs.basedOnRevision) {
+            status = 'success';
+            result = {
+              status: 'applied',
+              newRevision: freshState.currentRevision,
+              appliedSpec: (freshState as any).spec || null,
+              provenanceEventId: '',
+              message: `Revision Rev ${freshState.currentRevision} successfully applied and committed to canvas.`,
+            } as ApplyResult;
+            break;
+          }
+
           this.store.dispatch({
             type: 'APPROVE_PREVIEW_UI',
-            payload: { previewId: inputArgs.previewId, source: 'native-confirmation' },
+            payload: { previewId: inputArgs.previewId, source: 'inapp-modal' },
           });
 
           const domainCmdResult = applyFigureRevision(this.store, {

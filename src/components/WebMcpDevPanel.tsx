@@ -39,6 +39,19 @@ interface AgentTimelineEntry {
   timestamp: number;
 }
 
+/**
+ * WebMcpDevPanel — LOCAL TESTING HARNESS ONLY.
+ *
+ * This panel calls Gemini directly and invokes tool executors in-process.
+ * It does NOT register tools through the browser's native document.modelContext
+ * API and is not a demonstration of WebMCP. It exists only to verify tool
+ * logic (validation, schemas, domain commands) quickly during development,
+ * including from mobile, before testing the real native path separately.
+ *
+ * The actual WebMCP integration is exercised through document.modelContext.
+ * registerTool() in WebMcpProvider.tsx and verified against a real
+ * WebMCP-capable browser session, not through this panel.
+ */
 export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose }) => {
   const { registeredTools, callLogs, executeTool, clearLogs, currentState } = useModelContext();
 
@@ -50,7 +63,7 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
     {
       id: 'init',
       type: 'system',
-      content: 'WebMCP Agent Simulator initialized. Environment Gemini key is active. Tools synced with current dataset state.',
+      content: 'Local tool-logic simulator (not native WebMCP) initialized. Environment Gemini key is active. Tools synced with current dataset state.',
       timestamp: Date.now()
     }
   ]);

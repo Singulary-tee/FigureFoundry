@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { WebMcpToolDefinition, WebMcpCallLog, FigureState } from '../../types';
 import { FigureDomainAction } from '../domain/reducer';
-import { WebMcpServer } from './server';
+import { WebMcpServer, WebMcpConfirmHandler } from './server';
 import { getDatasetAwareTools, getPageAwareTools, BASE_WEBMCP_TOOLS } from './tools';
 import { initWebMcpPolyfill, isNativeToolsPolicyAllowed } from './polyfill';
 import { setupPostMessageTransport } from './transport';
 import { WebMcpContextValue, WebMcpExecutionState, WebMcpAgent } from './types';
+import { ProposalConfirmationModal, PendingConfirmationDetails } from '../../components/ProposalConfirmationModal';
 
 export const WebMcpContext = createContext<WebMcpContextValue | null>(null);
 
@@ -16,6 +17,7 @@ export interface WebMcpProviderProps {
   autoRegisterBrowser?: boolean;
   enablePostMessageTransport?: boolean;
   onCallLog?: (log: WebMcpCallLog) => void;
+  confirmHandler?: WebMcpConfirmHandler;
 }
 
 export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
@@ -24,7 +26,8 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
   dispatchDomainAction,
   autoRegisterBrowser = true,
   enablePostMessageTransport = true,
-  onCallLog
+  onCallLog,
+  confirmHandler: confirmHandlerProp,
 }) => {
   const [callLogs, setCallLogs] = useState<WebMcpCallLog[]>([]);
   const [executionState, setExecutionState] = useState<WebMcpExecutionState>({
@@ -47,14 +50,38 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
   dispatchRef.current = dispatchDomainAction;
   const stateRef = useRef(currentState);
   stateRef.current = currentState;
+  const confirmHandlerPropRef = useRef(confirmHandlerProp);
+  confirmHandlerPropRef.current = confirmHandlerProp;
+
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    details: PendingConfirmationDetails;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
+
+  const confirmHandler = useCallback((details: PendingConfirmationDetails): Promise<boolean> => {
+    if (confirmHandlerPropRef.current) {
+      return confirmHandlerPropRef.current(details);
+    }
+    return new Promise<boolean>((resolve) => {
+      setPendingConfirmation({
+        details,
+        resolve: (confirmed: boolean) => {
+          setPendingConfirmation(null);
+          resolve(confirmed);
+        },
+      });
+    });
+  }, []);
+
   const server = useMemo(
     () => new WebMcpServer(
       (a) => dispatchRef.current(a),
       () => stateRef.current,
       undefined,
-      () => ((stateRef.current as any).panels || []).map((panel: any) => panel.id)
+      () => ((stateRef.current as any).panels || []).map((panel: any) => panel.id),
+      confirmHandler
     ),
-    []
+    [confirmHandler]
   );
 
   const registeredTools = useMemo(() => {
@@ -292,7 +319,8 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
       executeTool,
       clearLogs,
       isNativeSupported,
-      currentState
+      currentState,
+      requestConfirmation: confirmHandler,
     }),
     [
       registeredTools,
@@ -303,9 +331,41 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
       executeTool,
       clearLogs,
       isNativeSupported,
-      currentState
+      currentState,
+      confirmHandler,
     ]
   );
 
-  return <WebMcpContext.Provider value={value}>{children}</WebMcpContext.Provider>;
+  return (
+    <WebMcpContext.Provider value={value}>
+      {children}
+      {!confirmHandlerProp && pendingConfirmation && (
+        <ProposalConfirmationModal
+          isOpen={true}
+          onOpenChange={(open) => {
+            if (!open && pendingConfirmation) {
+              pendingConfirmation.resolve(false);
+            }
+          }}
+          details={pendingConfirmation.details}
+          onConfirm={() => {
+            if (pendingConfirmation) {
+              pendingConfirmation.resolve(true);
+            }
+          }}
+          onDiscard={() => {
+            if (pendingConfirmation) {
+              dispatchRef.current({ type: 'CLEAR_PREVIEW' });
+              pendingConfirmation.resolve(false);
+            }
+          }}
+          onCancel={() => {
+            if (pendingConfirmation) {
+              pendingConfirmation.resolve(false);
+            }
+          }}
+        />
+      )}
+    </WebMcpContext.Provider>
+  );
 };

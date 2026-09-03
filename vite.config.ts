@@ -67,47 +67,125 @@ export default defineConfig(() => {
 
                 function sanitizeSchema(schema: any): any {
                   if (!schema || typeof schema !== 'object') return schema;
-                  const cleaned: any = Array.isArray(schema) ? [] : {};
-                  
-                  for (const [key, val] of Object.entries(schema)) {
-                    if (key === 'enum' && Array.isArray(val)) {
-                      cleaned[key] = val.map(v => String(v));
-                    } else if (key === 'type') {
-                      if (Array.isArray(val)) {
-                        const valid = val.find(t => t !== 'null') || 'string';
-                        cleaned[key] = String(valid).toUpperCase();
-                      } else if (typeof val === 'string') {
-                        cleaned[key] = val.toUpperCase();
-                      } else {
-                        cleaned[key] = 'STRING';
-                      }
-                    } else if (key === 'properties' && val && typeof val === 'object') {
-                      const props: any = {};
-                      for (const [pName, pSchema] of Object.entries(val)) {
-                        props[pName] = sanitizeSchema(pSchema);
-                      }
-                      cleaned[key] = props;
-                    } else if (key === 'items' && val && typeof val === 'object') {
-                      cleaned[key] = sanitizeSchema(val);
-                    } else if (typeof val === 'object' && val !== null) {
-                      cleaned[key] = sanitizeSchema(val);
+                  if (Array.isArray(schema)) {
+                    return schema.map(item => sanitizeSchema(item));
+                  }
+
+                  const cleaned: any = {};
+
+                  if (schema.type) {
+                    if (Array.isArray(schema.type)) {
+                      const valid = schema.type.find((t: any) => t !== 'null') || 'string';
+                      cleaned.type = String(valid).toUpperCase();
+                      cleaned.nullable = true;
+                    } else if (typeof schema.type === 'string') {
+                      cleaned.type = schema.type.toUpperCase();
                     } else {
-                      cleaned[key] = val;
+                      cleaned.type = 'STRING';
                     }
                   }
 
-                  if (!cleaned.type && cleaned.properties) {
-                    cleaned.type = 'OBJECT';
+                  if (schema.nullable === true) {
+                    cleaned.nullable = true;
+                  }
+
+                  if (typeof schema.description === 'string') {
+                    cleaned.description = schema.description;
+                  }
+
+                  if (typeof schema.title === 'string') {
+                    cleaned.title = schema.title;
+                  }
+
+                  if (typeof schema.format === 'string') {
+                    cleaned.format = schema.format;
+                  }
+
+                  if (Array.isArray(schema.enum)) {
+                    cleaned.enum = schema.enum.map((v: any) => String(v));
+                  }
+
+                  if (schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)) {
+                    const props: Record<string, any> = {};
+                    for (const [pName, pSchema] of Object.entries(schema.properties)) {
+                      props[pName] = sanitizeSchema(pSchema);
+                    }
+                    cleaned.properties = props;
+                  }
+
+                  if (Array.isArray(schema.required)) {
+                    cleaned.required = schema.required.filter((r: any) => typeof r === 'string');
+                  }
+
+                  if (schema.items && typeof schema.items === 'object') {
+                    cleaned.items = sanitizeSchema(schema.items);
+                  }
+
+                  if (typeof schema.minimum === 'number') {
+                    cleaned.minimum = schema.minimum;
+                  } else if (typeof schema.exclusiveMinimum === 'number') {
+                    cleaned.minimum = schema.exclusiveMinimum;
+                  }
+
+                  if (typeof schema.maximum === 'number') {
+                    cleaned.maximum = schema.maximum;
+                  } else if (typeof schema.exclusiveMaximum === 'number') {
+                    cleaned.maximum = schema.exclusiveMaximum;
+                  }
+
+                  if (typeof schema.minItems === 'number' || typeof schema.minItems === 'string') {
+                    cleaned.minItems = String(schema.minItems);
+                  }
+                  if (typeof schema.maxItems === 'number' || typeof schema.maxItems === 'string') {
+                    cleaned.maxItems = String(schema.maxItems);
+                  }
+
+                  if (typeof schema.minLength === 'number' || typeof schema.minLength === 'string') {
+                    cleaned.minLength = String(schema.minLength);
+                  }
+                  if (typeof schema.maxLength === 'number' || typeof schema.maxLength === 'string') {
+                    cleaned.maxLength = String(schema.maxLength);
+                  }
+
+                  if (typeof schema.pattern === 'string') {
+                    cleaned.pattern = schema.pattern;
+                  }
+
+                  if (Array.isArray(schema.anyOf)) {
+                    cleaned.anyOf = schema.anyOf.map((sub: any) => sanitizeSchema(sub));
+                  }
+
+                  if (schema.default !== undefined) {
+                    cleaned.default = schema.default;
+                  }
+                  if (schema.example !== undefined) {
+                    cleaned.example = schema.example;
+                  }
+
+                  if (!cleaned.type) {
+                    if (cleaned.properties) {
+                      cleaned.type = 'OBJECT';
+                    } else if (cleaned.items) {
+                      cleaned.type = 'ARRAY';
+                    } else {
+                      cleaned.type = 'STRING';
+                    }
                   }
 
                   return cleaned;
                 }
 
-                const functionDeclarations = (tools || []).map((t: any) => ({
-                  name: t.name,
-                  description: t.description,
-                  parameters: sanitizeSchema(t.inputSchema || { type: 'OBJECT', properties: {} })
-                }));
+                const functionDeclarations = (tools || []).map((t: any) => {
+                  const parameters = sanitizeSchema(t.inputSchema || { type: 'OBJECT', properties: {} });
+                  if (!parameters.type) {
+                    parameters.type = 'OBJECT';
+                  }
+                  return {
+                    name: t.name,
+                    description: t.description,
+                    parameters
+                  };
+                });
 
                 const systemInstruction = `You are an autonomous AI browser agent operating within a web browser environment (such as OpenAI Operator or Gemini in Chrome). Your purpose is to assist the user by autonomously interacting with web applications on their behalf.
 

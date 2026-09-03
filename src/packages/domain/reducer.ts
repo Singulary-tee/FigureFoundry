@@ -1105,7 +1105,7 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         preview.panelId !== panelId ||
         !preview.approvedInUI ||
         preview.approval?.approvedBy !== 'human' ||
-        preview.approval?.source !== 'native-confirmation' ||
+        (preview.approval?.source !== 'native-confirmation' && preview.approval?.source !== 'inapp-modal') ||
         !command.payload.approval ||
         command.payload.approval.previewId !== preview.previewId ||
         provenanceMetadata?.previewId !== preview.previewId ||

@@ -50,7 +50,7 @@ export type DomainCommand =
         workspacePatch?: WorkspacePatch;
         provenance?: {
           previewId?: string;
-          approval?: { approvedAt: number; approvedBy: 'human'; source: 'native-confirmation' };
+          approval?: { approvedAt: number; approvedBy: 'human'; source: 'native-confirmation' | 'inapp-modal' };
           basedOnRevision: number;
           validationReport: any;
           commandPayload?: Record<string, any>;
@@ -60,7 +60,7 @@ export type DomainCommand =
         approval?: { previewId: string };
       };
     }
-  | { type: 'APPROVE_PREVIEW_UI'; payload: { previewId: string; source: 'native-confirmation' } }
+  | { type: 'APPROVE_PREVIEW_UI'; payload: { previewId: string; source: 'native-confirmation' | 'inapp-modal' } }
   | { type: 'SET_FIGURE_NOTES'; payload: { figureId: string; notes: { legend?: string; methods?: string; research?: string } } }
   | { type: 'RECORD_ANALYSIS_RUN'; payload: Omit<AnalysisRun, 'id' | 'createdAt' | 'status'> & { id?: string; createdAt?: string; status?: AnalysisRun['status'] } }
   | { type: 'RESTORE_SNAPSHOT'; payload: { targetRevision: number } }
@@ -241,7 +241,7 @@ export function applyFigureRevision(store: any, params: any) {
     params.approvalToken !== preview.previewId ||
     !preview.approvedInUI ||
     preview.approval?.approvedBy !== 'human' ||
-    preview.approval?.source !== 'native-confirmation'
+    (preview.approval?.source !== 'native-confirmation' && preview.approval?.source !== 'inapp-modal')
   ) {
     return {
       success: false,

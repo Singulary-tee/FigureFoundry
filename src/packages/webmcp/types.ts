@@ -1,6 +1,7 @@
 import { WebMcpToolDefinition, WebMcpCallLog, WebMcpToolAnnotations, FigureState } from '../../types';
+import type { PendingConfirmationDetails } from '../../components/ProposalConfirmationModal';
 
-export type { WebMcpToolDefinition, WebMcpCallLog, WebMcpToolAnnotations };
+export type { WebMcpToolDefinition, WebMcpCallLog, WebMcpToolAnnotations, PendingConfirmationDetails };
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -70,4 +71,5 @@ export interface WebMcpContextValue {
   clearLogs: () => void;
   isNativeSupported: boolean;
   currentState: FigureState;
+  requestConfirmation?: (details: PendingConfirmationDetails) => Promise<boolean>;
 }
