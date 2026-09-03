@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { profileDataset, getRegisteredDatasets } from '../../packages/data-model/profiler';
 import { useDomainStore } from '../../packages/domain/store';
+import { getAccessibleDatasetIds } from '../../packages/domain/state';
 import { ImportModal } from '../modals/ImportModal';
 import { ConfirmDeleteModal, ConfirmDeleteState } from '../modals/ConfirmDeleteModal';
 
@@ -28,13 +29,18 @@ interface DataViewProps {
 }
 
 export const DataView: React.FC<DataViewProps> = ({
-  currentDatasetId = 'palmer-penguins',
+  currentDatasetId,
   onNavigate,
   onSelectDataset,
 }) => {
   const { state, dispatch } = useDomainStore();
 
-  const selectedDatasetId = state.selectedDatasetId || currentDatasetId;
+  const accessibleDatasetIds = getAccessibleDatasetIds(state);
+  const accessibleDatasets = state.datasets.filter((dataset) => accessibleDatasetIds.has(dataset.id));
+  const requestedDatasetId = state.selectedDatasetId || currentDatasetId;
+  const selectedDatasetId = accessibleDatasetIds.has(requestedDatasetId)
+    ? requestedDatasetId
+    : accessibleDatasets[0]?.id || '';
   const [activeTab, setActiveTab] = useState<'table' | 'fields'>('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<string | null>(null);
@@ -47,10 +53,11 @@ export const DataView: React.FC<DataViewProps> = ({
 
   const activeProject = state.projects.find((p) => p.id === state.activeProjectId);
   const activeWorkspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+  const selectedDataset = accessibleDatasets.find((dataset) => dataset.id === selectedDatasetId);
 
   const profile = useMemo(() => {
     return profileDataset(selectedDatasetId);
-  }, [selectedDatasetId]);
+  }, [selectedDatasetId, selectedDataset?.revision, selectedDataset?.rows]);
 
   // Determine if dataset is Project Scoped or Workspace Shared
   const isProjectScoped = activeProject?.datasetIds.includes(selectedDatasetId);
@@ -102,12 +109,13 @@ export const DataView: React.FC<DataViewProps> = ({
   const handleExportCSV = () => {
     if (!profile.records.length) return;
     const headers = profile.fields.map((f) => f.name);
+    const escapeCsvValue = (value: unknown) => {
+      const text = value == null ? '' : String(value);
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
     const csvRows = [headers.join(',')];
     for (const row of profile.records) {
-      const values = headers.map((h) => {
-        const val = row[h] ?? '';
-        return typeof val === 'string' && val.includes(',') ? `"${val}"` : val;
-      });
+      const values = headers.map((h) => escapeCsvValue(row[h]));
       csvRows.push(values.join(','));
     }
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
@@ -169,7 +177,7 @@ export const DataView: React.FC<DataViewProps> = ({
               }}
               className="px-3 py-2 rounded-lg bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5] outline-none focus:border-[#24b47e] shrink-0"
             >
-              {state.datasets.map((d) => (
+              {accessibleDatasets.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
                 </option>

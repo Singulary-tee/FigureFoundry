@@ -1,5 +1,7 @@
 import { DatasetRecord } from '../data-model/datasets';
 import { FigureProject, PanelSpec, PanelKind, WorkspacePatch } from '../../types/multipanel';
+import { FigureNotes, AnalysisRun } from './state';
+import { ProvenanceLedger } from '../provenance/ledger';
 import { ActiveView } from './state';
 
 export type DomainCommand =
@@ -7,9 +9,11 @@ export type DomainCommand =
   | { type: 'SWITCH_ACCOUNT'; payload: 'guest' | 'authenticated' }
   | { type: 'SWITCH_WORKSPACE'; payload: string }
   | { type: 'CREATE_WORKSPACE'; payload: { name: string } }
+  | { type: 'RENAME_WORKSPACE'; payload: { workspaceId: string; name: string } }
   | { type: 'DELETE_WORKSPACE'; payload: string }
   | { type: 'SWITCH_PROJECT'; payload: string }
   | { type: 'CREATE_PROJECT'; payload: { name: string; description?: string } }
+  | { type: 'RENAME_PROJECT'; payload: { projectId: string; name: string; description?: string } }
   | { type: 'DELETE_PROJECT'; payload: string }
   | { type: 'SWITCH_FIGURE'; payload: string }
   | { type: 'CREATE_FIGURE'; payload?: { name?: string } }
@@ -24,9 +28,19 @@ export type DomainCommand =
   | { type: 'SET_ACTIVE_THEME'; payload: string }
   | { type: 'SET_CANVAS_SIZE'; payload: { width: number; height: number } }
   | { type: 'UPDATE_FIGURE_NAME'; payload: string }
-  | { type: 'LOAD_FIGURE'; payload: FigureProject }
+  | { type: 'LOAD_FIGURE'; payload: FigureProject; recordProvenance?: boolean }
   | { type: 'RESET_FIGURE' }
-  | { type: 'IMPORT_FIGURE_BUNDLE'; payload: FigureProject }
+  | {
+      type: 'IMPORT_FIGURE_BUNDLE';
+      payload: {
+        figure: FigureProject;
+        datasets?: import('../data-model/datasets').DatasetRecord[];
+        notes?: FigureNotes;
+        provenance?: ProvenanceLedger;
+        analysisRuns?: import('./state').AnalysisRun[];
+        scope?: 'project' | 'workspace';
+      };
+    }
   | {
       type: 'APPLY_PROPOSAL';
       payload: {
@@ -36,6 +50,7 @@ export type DomainCommand =
         workspacePatch?: WorkspacePatch;
         provenance?: {
           previewId?: string;
+          approval?: { approvedAt: number; approvedBy: 'human'; source: 'native-confirmation' };
           basedOnRevision: number;
           validationReport: any;
           commandPayload?: Record<string, any>;
@@ -45,7 +60,9 @@ export type DomainCommand =
         approval?: { previewId: string };
       };
     }
-  | { type: 'APPROVE_PREVIEW_UI'; payload: { previewId: string } }
+  | { type: 'APPROVE_PREVIEW_UI'; payload: { previewId: string; source: 'native-confirmation' } }
+  | { type: 'SET_FIGURE_NOTES'; payload: { figureId: string; notes: { legend?: string; methods?: string; research?: string } } }
+  | { type: 'RECORD_ANALYSIS_RUN'; payload: Omit<AnalysisRun, 'id' | 'createdAt' | 'status'> & { id?: string; createdAt?: string; status?: AnalysisRun['status'] } }
   | { type: 'RESTORE_SNAPSHOT'; payload: { targetRevision: number } }
   | { type: 'SET_PREVIEW'; payload: { preview: any } }
   | { type: 'CLEAR_PREVIEW' }
@@ -62,8 +79,21 @@ import { validateFigureSpec } from '../validation/validator';
  */
 export function proposeFigureRevision(store: any, params: any) {
   const spec = params.proposedSpec;
-  const datasetId = store.getState().datasetId || 'palmer-penguins';
-  const profile = profileDataset(datasetId);
+  const state = store.getState();
+  const datasetId = params.datasetId || state.datasetId || '';
+  const figureId = state.activeFigureId || state.figure?.id;
+  const panelId = params.commandPayload?.targetPanelId;
+  const targetPanel = state.figure?.panels?.find((panel: any) => panel.id === panelId);
+  if (!figureId || !targetPanel) {
+    return {
+      success: false,
+      result: {
+        valid: false,
+        issues: [{ severity: 'blocking', path: 'targetPanelId', message: 'The requested panel is not present in the active figure.' }],
+      },
+    };
+  }
+  const profile = params.datasetProfile || profileDataset(datasetId);
   const panelKind: PanelKind = params.panelKind || params.commandPayload?.panelKind || spec.kind || 'single-chart';
   const chartSpec = panelKind === 'single-chart' && spec?.kind === 'single-chart' ? spec.spec : spec;
   const validation = panelKind === 'single-chart'
@@ -81,7 +111,9 @@ export function proposeFigureRevision(store: any, params: any) {
     createdAt: Date.now(),
     approvedInUI: false,
     actor: params.actor || 'agent',
-    panelId: params.commandPayload?.targetPanelId || store.getState().figure?.panels?.[0]?.id,
+    figureId,
+    datasetId,
+    panelId,
     commandPayload: JSON.parse(JSON.stringify(params.commandPayload || {})),
     workspacePatch: params.workspacePatch ? JSON.parse(JSON.stringify(params.workspacePatch)) : undefined,
   };
@@ -165,6 +197,19 @@ export function applyFigureRevision(store: any, params: any) {
     };
   }
 
+  if (preview.figureId !== state.activeFigureId || preview.figureId !== state.figure?.id) {
+    return {
+      success: false,
+      result: {
+        status: 'rejected_stale',
+        newRevision: state.currentRevision,
+        appliedSpec: null,
+        provenanceEventId: '',
+        message: 'The active figure changed after this proposal was staged. Re-propose for the current figure.',
+      },
+    };
+  }
+
   if (state.currentRevision !== params.basedOnRevision) {
     return {
       success: false,
@@ -194,7 +239,9 @@ export function applyFigureRevision(store: any, params: any) {
   if (
     !params.humanApprovalConfirmed ||
     params.approvalToken !== preview.previewId ||
-    !preview.approvedInUI
+    !preview.approvedInUI ||
+    preview.approval?.approvedBy !== 'human' ||
+    preview.approval?.source !== 'native-confirmation'
   ) {
     return {
       success: false,
@@ -213,6 +260,7 @@ export function applyFigureRevision(store: any, params: any) {
       ? {
         kind: 'single-chart',
         spec: preview.proposedSpec?.kind === 'single-chart' ? preview.proposedSpec.spec : preview.proposedSpec,
+        ...(preview.datasetId ? { datasetId: preview.datasetId } : {}),
       }
     : { ...preview.proposedSpec, kind: preview.panelKind };
   store.dispatch({
@@ -224,6 +272,7 @@ export function applyFigureRevision(store: any, params: any) {
       workspacePatch: preview.workspacePatch,
       provenance: {
         previewId: preview.previewId,
+        approval: preview.approval,
         basedOnRevision: preview.basedOnRevision,
         validationReport: preview.validation,
         commandPayload: preview.commandPayload,

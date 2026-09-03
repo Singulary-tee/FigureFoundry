@@ -5,6 +5,7 @@ import { validateFile } from '../../packages/validation/validator';
 import { Upload, FileText, CheckCircle2, AlertTriangle, Layers, FolderKanban } from 'lucide-react';
 import { DatasetRecord } from '../../packages/data-model/datasets';
 import { FigureProject } from '../../types/multipanel';
+import { ExportBundle } from '../../types';
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
   const [scope, setScope] = useState<'project' | 'workspace'>(defaultScope);
   const [parsedDataset, setParsedDataset] = useState<DatasetRecord | null>(null);
   const [parsedFigure, setParsedFigure] = useState<FigureProject | null>(null);
+  const [parsedBundle, setParsedBundle] = useState<ExportBundle | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationSuccess, setValidationSuccess] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -40,6 +42,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
     setValidationSuccess(null);
     setParsedDataset(null);
     setParsedFigure(null);
+    setParsedBundle(null);
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -60,6 +63,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
       if (res.dataset) {
         setParsedDataset(res.dataset);
         setValidationSuccess(`Valid Dataset (${res.dataset.rows.length} rows)`);
+      } else if (res.figure) {
+        setParsedFigure(res.figure as FigureProject);
+        setParsedBundle((res as { bundle?: ExportBundle }).bundle || null);
+        setValidationSuccess(`Valid Figure Bundle (${res.figure.panels.length} panels)`);
       } else {
         setValidationError('Unrecognized file content.');
       }
@@ -88,7 +95,14 @@ export const ImportModal: React.FC<ImportModalProps> = ({ isOpen, onClose, defau
     } else if (parsedFigure) {
       dispatch({
         type: 'IMPORT_FIGURE_BUNDLE',
-        payload: parsedFigure,
+        payload: {
+          figure: parsedFigure,
+          datasets: parsedBundle?.datasets,
+          notes: parsedBundle?.notes,
+          provenance: parsedBundle?.provenance,
+          analysisRuns: parsedBundle?.analysisRuns,
+          scope,
+        },
       });
       onClose();
     }

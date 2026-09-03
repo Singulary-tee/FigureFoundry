@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import logo from '../../assets/logo.webp';
 import {
   Undo2,
   Redo2,
@@ -9,7 +8,6 @@ import {
   Download,
   FileCode,
   Image as ImageIcon,
-  History,
   MoreVertical,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -35,7 +33,6 @@ interface TopBarProps {
   onExportSvg: () => void;
   onExportJson: () => void;
   onOpenWebMcpDev: () => void;
-  onOpenProvenance: () => void;
   onOpenMobileInspector?: () => void;
 }
 
@@ -53,7 +50,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   onExportSvg,
   onExportJson,
   onOpenWebMcpDev,
-  onOpenProvenance,
   onOpenMobileInspector,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -71,12 +67,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <header className="h-12 w-full bg-white dark:bg-[#121212] border-b border-[#e4e4e7] dark:border-[#27272a] px-3 flex items-center justify-between select-none shrink-0 z-40 transition-colors">
+    <header className="h-11 sm:h-12 w-full bg-white dark:bg-[#121212] border-b border-[#e4e4e7] dark:border-[#27272a] px-2 sm:px-3 flex items-center justify-between select-none shrink-0 z-40 transition-colors">
       {/* Left: Logo & Figure Title */}
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1">
         {/* Brand logo */}
-        <div className="flex items-center justify-center gap-2 shrink-0">
-          <img src={logo} alt="FigureFoundry Logo" className="w-6 h-6 shrink-0 object-contain block" referrerPolicy="no-referrer" />
+        <div className="flex items-center justify-center gap-1.5 sm:gap-2 shrink-0">
+          <img src="/logo-mark.webp" alt="FigureFoundry Logo" className="w-6 h-6 shrink-0 object-contain block" referrerPolicy="no-referrer" />
           <span className="font-bold text-sm tracking-tight text-[#0f172a] dark:text-[#f4f4f5] hidden md:inline-block">
             FigureFoundry
           </span>
@@ -86,7 +82,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="h-4 w-px bg-[#e4e4e7] dark:bg-[#27272a] hidden md:block shrink-0" />
 
         {/* Editable Figure Title */}
-        <div className="flex items-center gap-1.5 min-w-0 max-w-[140px] xs:max-w-[180px] sm:max-w-[240px] md:max-w-xs">
+        <div className="flex items-center gap-1 min-w-0 max-w-[96px] sm:max-w-[240px] md:max-w-xs">
           {isEditingTitle ? (
             <input
               type="text"
@@ -127,14 +123,14 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+      <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
         {/* Undo / Redo */}
         <div className="flex items-center bg-[#f4f4f5] dark:bg-[#18181b] rounded-md p-0.5 border border-[#e4e4e7] dark:border-[#27272a] shrink-0">
           <button
             onClick={onUndo}
             disabled={!canUndo}
             title="Undo"
-            className="w-7 h-7 rounded text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] hover:bg-white dark:hover:bg-[#27272a] disabled:opacity-30 transition-colors flex items-center justify-center cursor-pointer"
+            className="w-6 h-7 sm:w-7 rounded text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] hover:bg-white dark:hover:bg-[#27272a] disabled:opacity-30 transition-colors flex items-center justify-center cursor-pointer"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>
@@ -142,7 +138,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             onClick={onRedo}
             disabled={!canRedo}
             title="Redo"
-            className="w-7 h-7 rounded text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] hover:bg-white dark:hover:bg-[#27272a] disabled:opacity-30 transition-colors flex items-center justify-center cursor-pointer"
+            className="w-6 h-7 sm:w-7 rounded text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] hover:bg-white dark:hover:bg-[#27272a] disabled:opacity-30 transition-colors flex items-center justify-center cursor-pointer"
           >
             <Redo2 className="w-3.5 h-3.5" />
           </button>
@@ -151,26 +147,17 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Light / Dark Mode Toggle */}
         <button
           onClick={onToggleTheme}
-          className="w-8 h-8 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-white dark:bg-[#18181b] text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] transition-colors flex items-center justify-center cursor-pointer shrink-0"
+          className="w-7 h-7 sm:w-8 sm:h-8 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-white dark:bg-[#18181b] text-[#71717a] dark:text-[#a1a1aa] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] transition-colors flex items-center justify-center cursor-pointer shrink-0"
           title="Toggle theme"
         >
           {theme === 'light' ? <Sun className="w-3.5 h-3.5 text-amber-500" /> : <Moon className="w-3.5 h-3.5 text-indigo-400" />}
-        </button>
-
-        <button
-          onClick={onOpenProvenance}
-          className="hidden sm:flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-white dark:bg-[#18181b] text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] transition-colors cursor-pointer shrink-0"
-          title="Open figure revision history"
-        >
-          <History className="w-3.5 h-3.5 text-[#24b47e]" />
-          <span>History</span>
         </button>
 
         {/* Mobile Inspector Toggle */}
         {onOpenMobileInspector && (
           <button
             onClick={onOpenMobileInspector}
-            className="md:hidden flex items-center gap-1 h-8 px-2 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-white dark:bg-[#18181b] text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] transition-colors cursor-pointer shrink-0"
+            className="md:hidden flex items-center gap-1 h-7 sm:h-8 px-1.5 sm:px-2 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-white dark:bg-[#18181b] text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] transition-colors cursor-pointer shrink-0"
             title="Open Panel Inspector"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-[#24b47e]" />
@@ -182,10 +169,12 @@ export const TopBar: React.FC<TopBarProps> = ({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex items-center gap-1 bg-[#24b47e] hover:bg-[#1f9d6e] text-white px-2.5 h-8 rounded-md text-xs font-medium shadow-xs transition-colors whitespace-nowrap cursor-pointer shrink-0"
+              aria-label="Export"
+              className="flex items-center gap-1 bg-[#24b47e] hover:bg-[#1f9d6e] text-white px-2 sm:px-2.5 h-7 sm:h-8 rounded-md text-xs font-medium shadow-xs transition-colors whitespace-nowrap cursor-pointer shrink-0"
             >
-              <span>Export</span>
-              <ChevronDown className="w-3 h-3" />
+              <Download className="w-3.5 h-3.5 sm:hidden" />
+              <span className="hidden sm:inline">Export</span>
+              <ChevronDown className="hidden sm:block w-3 h-3" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 p-1">
@@ -206,7 +195,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <Download className="w-4 h-4 text-[#24b47e]" />
               <div>
                 <div className="font-semibold text-xs text-[#18181b] dark:text-[#f4f4f5]">Export SVG</div>
-                <div className="text-[11px] text-[#71717a]">Vector graphic for publication</div>
+                <div className="text-[11px] text-[#71717a]">Raster image wrapped in SVG for compatibility</div>
               </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -227,6 +216,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
+              aria-label="Editor actions"
               className="w-8 h-8 rounded-md text-[#71717a] dark:text-[#a1a1aa] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] transition-colors flex items-center justify-center cursor-pointer shrink-0"
             >
               <MoreVertical className="w-4 h-4" />

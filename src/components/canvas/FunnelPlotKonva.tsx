@@ -18,6 +18,13 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
   const { width, height } = frame;
   const padding = 16;
   const colors = theme.colors;
+  const hasInvalidPoint = Array.isArray(spec.points) && spec.points.some((point) =>
+    !Number.isFinite(point.effect) || !Number.isFinite(point.standardError) || point.standardError <= 0 || (spec.xAxis.scale === 'log' && point.effect <= 0),
+  );
+  const hasBindingIssues = !spec.datasetId || Boolean(spec.bindingIssues?.length) || hasInvalidPoint;
+  const bindingMessage = spec.bindingIssues?.join(' ') || (!spec.datasetId
+    ? 'no dataset is bound to this panel.'
+    : 'the mapped effect or standard-error values are invalid.');
 
   const plotLeft = 70;
   const plotRight = width - 40;
@@ -26,10 +33,14 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
 
-  const xMin = spec?.xAxis?.min ?? -2;
-  const xMax = spec?.xAxis?.max ?? 2;
-  const yMin = spec?.yAxis?.min ?? 0.0;
-  const yMax = spec?.yAxis?.max ?? 2.0;
+  const configuredXMin = Number(spec?.xAxis?.min);
+  const configuredXMax = Number(spec?.xAxis?.max);
+  const configuredYMin = Number(spec?.yAxis?.min);
+  const configuredYMax = Number(spec?.yAxis?.max);
+  const xMin = Number.isFinite(configuredXMin) ? configuredXMin : -2;
+  const xMax = Number.isFinite(configuredXMax) && configuredXMax > xMin ? configuredXMax : xMin + 1;
+  const yMin = Number.isFinite(configuredYMin) ? configuredYMin : 0;
+  const yMax = Number.isFinite(configuredYMax) && configuredYMax > yMin ? configuredYMax : yMin + 1;
 
   const xDiff = xMax - xMin !== 0 ? xMax - xMin : 1;
   const yDiff = yMax - yMin !== 0 ? yMax - yMin : 1;
@@ -40,18 +51,14 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
     return plotLeft + frac * plotWidth;
   };
 
-  // SE is inverted: 0.0 is top, 2.0 is bottom
+  // Funnel plots conventionally put the most precise studies at the top.
   const mapY = (val: number) => {
     if (val == null || isNaN(val)) return plotTop;
     const frac = (val - yMin) / yDiff;
-    return plotTop + frac * plotHeight;
+    return spec.yAxis.inverted === false ? plotBottom - frac * plotHeight : plotTop + frac * plotHeight;
   };
 
-  const centerPeakX = mapX(0);
-  const peakY = mapY(0);
-  const leftFunnelBottomX = mapX(xMin);
-  const rightFunnelBottomX = mapX(xMax);
-  const funnelBottomY = mapY(yMax);
+  const nullEffectX = mapX(0);
 
   return (
     <Group>
@@ -94,29 +101,28 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
         />
       )}
 
-      {/* Funnel Guide Triangle */}
-      {spec.showFunnelGuides && (
+      {hasBindingIssues && spec.showLabels && (
+        <Text
+          x={padding + 54}
+          y={plotTop + 24}
+          width={plotWidth - 24}
+          text={`Data unavailable: ${bindingMessage}`}
+          fontSize={11}
+          fontStyle="bold"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          fill={colors.mutedText}
+          wrap="word"
+        />
+      )}
+
+      {/* Null-effect reference line; confidence contours require a validated pooled estimate and are not inferred here. */}
+      {!hasBindingIssues && spec.showFunnelGuides && (
         <Group>
-          {/* Vertical center axis */}
           <Line
-            points={[centerPeakX, peakY, centerPeakX, funnelBottomY]}
+            points={[nullEffectX, plotTop, nullEffectX, plotBottom]}
             stroke={colors.gridline}
             strokeWidth={1.5}
             dash={[3, 3]}
-          />
-          {/* Left funnel diagonal guide */}
-          <Line
-            points={[centerPeakX, peakY, leftFunnelBottomX + 20, funnelBottomY]}
-            stroke={colors.mutedText}
-            strokeWidth={1}
-            dash={[2, 2]}
-          />
-          {/* Right funnel diagonal guide */}
-          <Line
-            points={[centerPeakX, peakY, rightFunnelBottomX - 20, funnelBottomY]}
-            stroke={colors.mutedText}
-            strokeWidth={1}
-            dash={[2, 2]}
           />
         </Group>
       )}
@@ -130,7 +136,7 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
             strokeWidth={1}
           />
           {/* Y Ticks: 0.0, 0.5, 1.0, 1.5, 2.0 */}
-          {[0.0, 0.5, 1.0, 1.5, 2.0].map((yVal) => {
+          {Array.from({ length: 5 }, (_, index) => yMin + (yDiff * index) / 4).map((yVal) => {
             const yPos = mapY(yVal);
             return (
               <Group key={yVal}>
@@ -160,7 +166,7 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
             <Text
               x={14}
               y={plotTop + plotHeight / 2 + 35}
-              text={spec.yAxis.title || 'SE (log OR)'}
+              text={spec.yAxis.title || 'Standard error'}
               fontSize={10.5}
               fontFamily="system-ui, -apple-system, sans-serif"
               fill={colors.text}
@@ -179,7 +185,7 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
             strokeWidth={1}
           />
           {/* X Ticks: -2, -1, 0, 1, 2 */}
-          {[-2, -1, 0, 1, 2].map((xVal) => {
+          {Array.from({ length: 5 }, (_, index) => xMin + ((xMax - xMin) * index) / 4).map((xVal) => {
             const xPos = mapX(xVal);
             return (
               <Group key={xVal}>
@@ -193,7 +199,7 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
                     x={xPos - 12}
                     y={plotBottom + 6}
                     width={24}
-                    text={String(xVal)}
+                    text={xVal.toFixed(2).replace(/\.00$/, '')}
                     fontSize={10.5}
                     fontFamily="system-ui, -apple-system, sans-serif"
                     fill={colors.text}
@@ -209,7 +215,7 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
             <Text
               x={plotLeft + plotWidth / 2 - 60}
               y={plotBottom + 22}
-              text={spec.xAxis.title || 'Odds Ratio (log scale)'}
+              text={spec.xAxis.title || (spec.xAxis.scale === 'log' ? 'Effect (log scale)' : 'Effect')}
               fontSize={10.5}
               fontFamily="system-ui, -apple-system, sans-serif"
               fill={colors.text}
@@ -220,9 +226,9 @@ export const FunnelPlotKonva: React.FC<FunnelPlotKonvaProps> = ({
       )}
 
       {/* Data Points */}
-      {spec.showDataPoints &&
+      {!hasBindingIssues && spec.showDataPoints &&
         (Array.isArray(spec.points) ? spec.points : []).map((pt, idx) => {
-          const ptX = mapX(pt?.effect);
+          const ptX = mapX(spec.xAxis.scale === 'log' ? Math.log(pt?.effect) : pt?.effect);
           const ptY = mapY(pt?.standardError);
           return (
             <Circle

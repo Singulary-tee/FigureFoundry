@@ -8,8 +8,6 @@ export type ActiveView = 'dashboard' | 'data' | 'analyses' | 'projects' | 'notes
 
 export interface Account {
   id: string;
-  name: string;
-  email: string;
   type: 'guest' | 'authenticated';
   activeWorkspaceId: string;
 }
@@ -34,6 +32,29 @@ export interface Project {
   updatedAt: string;
 }
 
+export interface FigureNotes {
+  legend?: string;
+  methods?: string;
+  research?: string;
+  updatedAt: string;
+}
+
+export interface AnalysisRun {
+  id: string;
+  figureId?: string;
+  datasetId: string;
+  datasetRevisionId?: string;
+  operation: string;
+  fields: string[];
+  inputs: Record<string, unknown>;
+  result: Record<string, unknown>;
+  status: 'complete' | 'unavailable';
+  unavailableReason?: string;
+  sourceRunId?: string;
+  actor: 'agent' | 'human';
+  createdAt: string;
+}
+
 export interface DomainState {
   account: Account;
   workspaces: Workspace[];
@@ -46,16 +67,38 @@ export interface DomainState {
   datasets: DatasetRecord[];
   selectedDatasetId: string | null;
   activeView: ActiveView;
+  /** The active figure's ledger, retained for compatibility with existing views. */
   provenance: ProvenanceLedger;
+  /** Ledgers are independent because revisions are meaningful only within one figure. */
+  provenanceByFigureId: Record<string, ProvenanceLedger>;
+  notesByFigureId: Record<string, FigureNotes>;
+  analysisRuns: AnalysisRun[];
   isWebMcpConnected: boolean;
   activePreview: FigurePreview | null;
+}
+
+/** Dataset IDs visible to the active project, including its workspace shares. */
+export function getAccessibleDatasetIds(state: DomainState): Set<string> {
+  const activeProject = state.projects.find((project) =>
+    project.id === state.activeProjectId && project.workspaceId === state.activeWorkspaceId,
+  );
+  const activeWorkspace = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
+  const knownDatasetIds = new Set(state.datasets.map((dataset) => dataset.id));
+  return new Set(
+    [
+      ...(activeProject?.datasetIds || []),
+      ...(activeWorkspace?.sharedDatasetIds || []),
+    ].filter((datasetId) => knownDatasetIds.has(datasetId)),
+  );
+}
+
+export function isDatasetAccessible(state: DomainState, datasetId: string): boolean {
+  return getAccessibleDatasetIds(state).has(datasetId);
 }
 
 export const INITIAL_DOMAIN_STATE: DomainState = {
   account: {
     id: 'acc-1',
-    name: 'Researcher',
-    email: 'researcher@figurefoundry.local',
     type: 'guest',
     activeWorkspaceId: 'ws-1',
   },
@@ -76,7 +119,7 @@ export const INITIAL_DOMAIN_STATE: DomainState = {
       workspaceId: 'ws-1',
       name: 'Example Project',
       description: 'An example data exploration and figure composition project.',
-      datasetIds: ['palmer-penguins', 'gapminder-life-expectancy'],
+      datasetIds: ['palmer-penguins', 'gapminder-life-expectancy', 'example-study-estimates'],
       figureIds: [DEFAULT_MULTIPANEL_FIGURE.id],
       createdAt: '2026-08-31',
       updatedAt: '2026-08-31',
@@ -90,6 +133,9 @@ export const INITIAL_DOMAIN_STATE: DomainState = {
   selectedDatasetId: 'palmer-penguins',
   activeView: 'figures',
   provenance: { events: [] },
+  provenanceByFigureId: { [DEFAULT_MULTIPANEL_FIGURE.id]: { events: [] } },
+  notesByFigureId: {},
+  analysisRuns: [],
   isWebMcpConnected: true,
   activePreview: null,
 };

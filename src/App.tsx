@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import Konva from 'konva';
-import { DomainState } from './packages/domain/state';
+import { DomainState, getAccessibleDatasetIds } from './packages/domain/state';
 import { FigureDomainAction } from './packages/domain/reducer';
 import { globalDomainStore, globalFigureStore, exportBundle, importBundle } from './packages/domain/store';
 import { profileDataset } from './packages/data-model/profiler';
@@ -16,6 +16,7 @@ import {
 } from './types/multipanel';
 import { BUILT_IN_THEMES, NATURE_THEME } from './packages/multipanel/themes';
 import { DEFAULT_MULTIPANEL_FIGURE } from './packages/multipanel/defaultFigure';
+import { bindPanelToDataset, isDatasetBoundPanel } from './packages/multipanel/datasetBinding';
 import { createTidyPanelLayout } from './packages/multipanel/layout';
 import {
   loadFigureFromStorage,
@@ -28,7 +29,6 @@ import {
 import {
   exportFigureToPng,
   exportFigureToSvg,
-  exportFigureToJson,
   exportPanelToPng,
   exportPanelToSvg,
 } from './packages/multipanel/exportBundle';
@@ -65,6 +65,7 @@ export default function App() {
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [layoutTransitionKey, setLayoutTransitionKey] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
   // History stack for Undo / Redo
   const [history, setHistory] = useState<MultiPanelFigure[]>([]);
@@ -82,7 +83,7 @@ export default function App() {
 
   // Initialize from localStorage on mount
   useEffect(() => {
-    const loadedFig = loadFigureFromStorage();
+    const loadedFig = globalDomainStore.getState().figure || loadFigureFromStorage();
     const loadedThemes = loadCustomThemes();
     const loadedThemeId = loadActiveThemeId();
 
@@ -129,7 +130,7 @@ export default function App() {
       setFigure(next);
       setHistory(nextHistory);
       setHistoryIndex(nextHistory.length - 1);
-      globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: next as any });
+      globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: next as any, recordProvenance: true });
     },
     [figure, history, historyIndex]
   );
@@ -142,6 +143,7 @@ export default function App() {
       setHistoryIndex(targetIdx);
       setFigure(targetFig);
       saveFigureToStorage(targetFig);
+      globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: targetFig as any, recordProvenance: true });
     }
   }, [historyIndex, history]);
 
@@ -152,6 +154,7 @@ export default function App() {
       setHistoryIndex(targetIdx);
       setFigure(targetFig);
       saveFigureToStorage(targetFig);
+      globalDomainStore.dispatch({ type: 'LOAD_FIGURE', payload: targetFig as any, recordProvenance: true });
     }
   }, [historyIndex, history]);
 
@@ -204,6 +207,14 @@ export default function App() {
     }));
   };
 
+  const handleRenameLayer = (panelId: string, name: string) => {
+    updateFigureWithHistory((prev) => ({
+      ...prev,
+      panels: prev.panels.map((panel) => panel.id === panelId ? { ...panel, label: name } : panel),
+      layers: prev.layers.map((layer) => layer.panelId === panelId ? { ...layer, name } : layer),
+    }));
+  };
+
   // Panel Frame update
   const handleUpdatePanelFrame = (
     panelId: string,
@@ -244,38 +255,27 @@ export default function App() {
           showReferenceBars: true,
           showLabels: true,
           showAxes: true,
-          studies: [
-            { id: 's1', study: 'Study A (2020)', effect: 0.65, ciLower: 0.42, ciUpper: 0.98, weight: 24.5 },
-            { id: 's2', study: 'Study B (2021)', effect: 0.82, ciLower: 0.58, ciUpper: 1.15, weight: 35.2 },
-            { id: 's3', study: 'Study C (2023)', effect: 0.55, ciLower: 0.35, ciUpper: 0.85, weight: 40.3 },
-          ],
-          pooledEstimate: { effect: 0.68, ciLower: 0.52, ciUpper: 0.88, weightTotal: 100, label: 'Total (95% CI)' },
+          studies: [],
+          pooledEstimate: { effect: Number.NaN, ciLower: Number.NaN, ciUpper: Number.NaN, weightTotal: 0, label: 'Awaiting dataset' },
         };
       } else if (newKind === 'funnel-plot') {
         newSpec = {
           kind: 'funnel-plot',
-          title: 'Funnel Plot',
-          xAxis: { min: -2, max: 2, title: 'Odds Ratio (log scale)' },
-          yAxis: { min: 0.0, max: 2.0, title: 'SE (log OR)' },
+          title: 'Funnel Plot (Study Dispersion)',
+          xAxis: { scale: 'log', min: -2, max: 2, title: 'Effect (log scale)' },
+          yAxis: { scale: 'linear', min: 0.0, max: 2.0, title: 'Standard error' },
           showFunnelGuides: true,
           showDataPoints: true,
           showLabels: true,
           showAxes: true,
-          points: [
-            { id: 'p1', study: 'Study 1', effect: -0.4, standardError: 0.3 },
-            { id: 'p2', study: 'Study 2', effect: 0.2, standardError: 0.6 },
-            { id: 'p3', study: 'Study 3', effect: -0.1, standardError: 0.9 },
-          ],
+          points: [],
         };
       } else if (newKind === 'grouped-bar') {
         newSpec = {
           kind: 'grouped-bar',
           title: 'Outcome Rates',
-          yAxis: { min: 0, max: 40, title: 'Event Rate (%)' },
-          groups: [
-            { id: 'g1', category: 'Bleeding', treatmentVal: 18, controlVal: 28 },
-            { id: 'g2', category: 'Mortality', treatmentVal: 12, controlVal: 22 },
-          ],
+          yAxis: { min: 0, max: 40, autoMax: true, title: 'Event Rate (%)' },
+          groups: [],
           legend: { treatmentLabel: 'Treatment', controlLabel: 'Control' },
           showDataPoints: true,
           showLabels: true,
@@ -287,10 +287,7 @@ export default function App() {
           kind: 'subgroup-analysis',
           title: 'Subgroup Analysis',
           xAxis: { min: 0.1, max: 10, referenceLine: 1 },
-          subgroups: [
-            { id: 'sg1', groupName: 'Group 1', effect: 0.68, ciLower: 0.5, ciUpper: 0.93, iSquared: 42 },
-            { id: 'sg2', groupName: 'Group 2', effect: 0.75, ciLower: 0.54, ciUpper: 1.04, iSquared: 28 },
-          ],
+          subgroups: [],
           showDataPoints: true,
           showErrorBars: true,
           showReferenceBars: true,
@@ -321,7 +318,7 @@ export default function App() {
           spec: {
             title: 'Expression Heatmap',
             figureIntent: 'relationship',
-            mark: 'point',
+            mark: 'rect',
             encoding: {
               x: { field: 'species', type: 'categorical', axisTitle: 'Group' },
               y: { field: 'island', type: 'categorical', axisTitle: 'Sample / condition' },
@@ -352,9 +349,21 @@ export default function App() {
         };
       }
 
+      // Keep an existing panel-local source; an unbound conversion stays unbound
+      // until the scientist explicitly chooses a dataset in the inspector.
+      const existingDatasetId = isDatasetBoundPanel(panel.spec) ? panel.spec.datasetId : undefined;
+      const existingFieldMapping = isDatasetBoundPanel(panel.spec) ? panel.spec.fieldMapping : undefined;
+      const boundSpec = isDatasetBoundPanel(newSpec) && existingDatasetId
+        ? bindPanelToDataset(
+            { ...newSpec, fieldMapping: existingFieldMapping },
+            existingDatasetId,
+            profileDataset(existingDatasetId),
+          )
+        : newSpec;
+
       return {
         ...prev,
-        panels: prev.panels.map((p) => (p.id === panelId ? { ...p, spec: newSpec } : p)),
+        panels: prev.panels.map((p) => (p.id === panelId ? { ...p, spec: boundSpec } : p)),
       };
     });
   };
@@ -421,6 +430,7 @@ export default function App() {
       canvasSize: {
         width: settings.width,
         height: settings.height,
+        dpi: settings.dpi,
       },
     }));
   };
@@ -577,11 +587,8 @@ export default function App() {
         showReferenceBars: true,
         showLabels: true,
         showAxes: true,
-        studies: [
-          { id: 'ns1', study: 'New Study Alpha', effect: 0.72, ciLower: 0.51, ciUpper: 0.98, weight: 45.0 },
-          { id: 'ns2', study: 'New Study Beta', effect: 0.61, ciLower: 0.38, ciUpper: 0.89, weight: 55.0 },
-        ],
-        pooledEstimate: { effect: 0.66, ciLower: 0.5, ciUpper: 0.86, weightTotal: 100, label: 'Total (95% CI)' },
+        studies: [],
+        pooledEstimate: { effect: Number.NaN, ciLower: Number.NaN, ciUpper: Number.NaN, weightTotal: 0, label: 'Awaiting dataset' },
       },
     };
 
@@ -639,29 +646,86 @@ export default function App() {
   };
 
   // Exports
+  const getExportBlockReason = (targetPanelId?: string) => {
+    if (!figure) return 'No figure is currently loaded.';
+    const visiblePanelIds = new Set(
+      figure.layers.filter((layer) => layer.visible).map((layer) => layer.panelId),
+    );
+    const panels = figure.panels.filter((panel) => !targetPanelId || panel.id === targetPanelId)
+      .filter((panel) => !targetPanelId || visiblePanelIds.size === 0 || visiblePanelIds.has(panel.id));
+    for (const panel of panels) {
+      if (!isDatasetBoundPanel(panel.spec)) continue;
+      if (!panel.spec.datasetId) return `${panel.label} has no dataset bound.`;
+      if (!getAccessibleDatasetIds(domainState).has(panel.spec.datasetId)) return `${panel.label} is bound to a dataset outside the active project/workspace.`;
+      if (panel.spec.bindingIssues?.length) return `${panel.label} has unresolved validation issues: ${panel.spec.bindingIssues.join(' ')}`;
+      if (panel.spec.bindingWarnings?.length) return `${panel.label} has unresolved data warnings: ${panel.spec.bindingWarnings.join(' ')}`;
+    }
+    const figureRuns = domainState.analysisRuns.filter((run) => !run.figureId || run.figureId === figure.id);
+    for (const run of figureRuns) {
+      if (run.status === 'unavailable') {
+        return `Analysis run ${run.operation} is unavailable: ${run.unavailableReason || 'its result cannot be interpreted safely.'}`;
+      }
+      if (!domainState.datasets.some((dataset) => dataset.id === run.datasetId)) {
+        return `Analysis run ${run.operation} references a missing source dataset.`;
+      }
+      if (!getAccessibleDatasetIds(domainState).has(run.datasetId)) {
+        return `Analysis run ${run.operation} references a dataset outside the active project/workspace.`;
+      }
+    }
+    return null;
+  };
+
+  const blockExport = (targetPanelId?: string) => {
+    const reason = getExportBlockReason(targetPanelId);
+    if (reason) {
+      window.alert(`Export blocked: ${reason} Resolve the panel validation state before exporting.`);
+      return true;
+    }
+    return false;
+  };
+
   const handleExportFullPng = () => {
+    if (blockExport()) return;
     if (stageRef.current) {
       exportFigureToPng(stageRef.current, `${figure.name.toLowerCase().replace(/\s+/g, '-')}.png`);
     }
   };
 
   const handleExportFullSvg = () => {
+    if (blockExport()) return;
     if (stageRef.current) {
       exportFigureToSvg(stageRef.current, `${figure.name.toLowerCase().replace(/\s+/g, '-')}.svg`);
     }
   };
 
   const handleExportJson = () => {
-    exportFigureToJson(figure, `${figure.name.toLowerCase().replace(/\s+/g, '-')}-bundle.json`);
+    if (blockExport()) return;
+    const accessibleDatasetIds = getAccessibleDatasetIds(domainState);
+    const referencedDatasetIds = new Set([
+      ...figure.panels.flatMap((panel) => 'datasetId' in panel.spec && panel.spec.datasetId ? [panel.spec.datasetId] : []),
+      ...domainState.analysisRuns.filter((run) => !run.figureId || run.figureId === figure.id).map((run) => run.datasetId),
+    ].filter((datasetId) => accessibleDatasetIds.has(datasetId)));
+    exportBundle(
+      figure,
+      `${figure.name.toLowerCase().replace(/\s+/g, '-')}-bundle.json`,
+      {
+        datasets: domainState.datasets.filter((dataset) => referencedDatasetIds.has(dataset.id)),
+        notes: domainState.notesByFigureId[figure.id],
+        provenance: domainState.provenanceByFigureId[figure.id],
+        analysisRuns: domainState.analysisRuns.filter((run) => !run.figureId || run.figureId === figure.id),
+      },
+    );
   };
 
   const handleExportPanelPng = (panelId: string) => {
+    if (blockExport(panelId)) return;
     if (stageRef.current) {
       exportPanelToPng(stageRef.current, panelId, `panel-${panelId}.png`);
     }
   };
 
   const handleExportPanelSvg = (panelId: string) => {
+    if (blockExport(panelId)) return;
     if (stageRef.current) {
       exportPanelToSvg(stageRef.current, panelId, `panel-${panelId}.svg`);
     }
@@ -673,6 +737,10 @@ export default function App() {
     globalDomainStore.getState.bind(globalDomainStore),
     globalDomainStore.getState.bind(globalDomainStore)
   ) as DomainState;
+  const accessibleDatasetIds = getAccessibleDatasetIds(domainState);
+  const accessibleDatasets = domainState.datasets.filter((dataset) => accessibleDatasetIds.has(dataset.id));
+  const activeProject = domainState.projects.find((project) => project.id === domainState.activeProjectId);
+  const activeProjectFigures = domainState.figures.filter((candidate) => activeProject?.figureIds.includes(candidate.id));
 
   // WebMCP-facing snapshot derived from the authoritative domain store.
   const figureState = useSyncExternalStore(
@@ -698,6 +766,8 @@ export default function App() {
       setFigure(domainState.figure as any);
       if (domainState.figure.id !== figure?.id) {
         setSelectedPanelId(domainState.figure.panels[0]?.id || null);
+        setHistory([domainState.figure as any]);
+        setHistoryIndex(0);
       }
     }
   }, [domainState.activeFigureId, domainState.figure, currentView]);
@@ -708,11 +778,12 @@ export default function App() {
         ...figureState,
         activeView: currentView,
         activeFigureId: domainState.activeFigureId,
+        figures: activeProjectFigures,
         panelIds: figure?.panels.map((panel) => panel.id) || [],
         panels: figure?.panels || [],
         selectedPanelId,
         selectedPanel: figure?.panels.find((panel) => panel.id === selectedPanelId) || null,
-        datasets: domainState.datasets,
+        datasets: accessibleDatasets,
       }}
       dispatchDomainAction={customDispatch}
     >
@@ -733,7 +804,6 @@ export default function App() {
             onExportSvg={handleExportFullSvg}
             onExportJson={handleExportJson}
             onOpenWebMcpDev={() => setIsWebMcpDevPanelOpen(true)}
-            onOpenProvenance={() => setIsProvenanceDrawerOpen(true)}
             onOpenMobileInspector={() => setIsMobileInspectorOpen(true)}
           />
         ) : (
@@ -748,16 +818,6 @@ export default function App() {
 
             {/* Right: Theme, Quick Jump */}
             <div className="flex items-center gap-4">
-              {/* Quick Launch Editor */}
-              {figure && (
-                <button
-                  onClick={() => setCurrentView('figures')}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#1f1f23] dark:hover:bg-[#27272a] px-3 py-1.5 rounded-lg transition-colors cursor-pointer border border-[#e4e4e7] dark:border-[#27272a]"
-                >
-                  <span>Launch Editor</span>
-                </button>
-              )}
-
               {/* Theme Toggle */}
               <button
                 onClick={() => setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'))}
@@ -776,6 +836,8 @@ export default function App() {
             </div>
           </header>
         )}
+
+        {restoreMessage && <div role="status" className="absolute left-1/2 top-16 z-50 -translate-x-1/2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-lg dark:border-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-200">{restoreMessage}</div>}
 
         {/* Main Work Area: Left Sidebar + (Current View Component) */}
         <div className="flex-1 flex flex-row min-h-0 overflow-hidden relative">
@@ -796,6 +858,9 @@ export default function App() {
               onToggleElement={handleToggleElement}
               onAddNewPanel={handleAddNewPanel}
               onDeleteLayer={handleDeleteLayer}
+              onRenameLayer={handleRenameLayer}
+              onDeleteFigure={(figureId) => globalDomainStore.dispatch({ type: 'DELETE_FIGURE', payload: figureId })}
+              onOpenProvenance={() => setIsProvenanceDrawerOpen(true)}
               isCollapsed={isLeftSidebarCollapsed}
               onToggleCollapse={() => setIsLeftSidebarCollapsed(!isLeftSidebarCollapsed)}
               figures={domainState.figures.filter((fig) => {
@@ -815,8 +880,20 @@ export default function App() {
               onCreateFigure={(name) => {
                 globalDomainStore.dispatch({ type: 'CREATE_FIGURE', payload: name ? { name } : undefined });
               }}
+              onCreateWorkspace={() => {
+                globalDomainStore.dispatch({ type: 'CREATE_WORKSPACE', payload: { name: 'New Workspace' } });
+              }}
               onSelectDataset={(dsId) => {
                 globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: dsId });
+              }}
+              workspaceName={domainState.workspaces.find((workspace) => workspace.id === domainState.activeWorkspaceId)?.name || 'Workspace'}
+              workspaces={domainState.workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name }))}
+              activeWorkspaceId={domainState.activeWorkspaceId}
+              onSwitchWorkspace={(workspaceId) => globalDomainStore.dispatch({ type: 'SWITCH_WORKSPACE', payload: workspaceId })}
+              onRenameWorkspace={(name) => globalDomainStore.dispatch({ type: 'RENAME_WORKSPACE', payload: { workspaceId: domainState.activeWorkspaceId, name } })}
+              onDeleteWorkspace={() => {
+                const workspace = domainState.workspaces.find((candidate) => candidate.id === domainState.activeWorkspaceId);
+                if (workspace) globalDomainStore.dispatch({ type: 'DELETE_WORKSPACE', payload: workspace.id });
               }}
             />
           )}
@@ -865,6 +942,7 @@ export default function App() {
                     onToggleLockSelected={handleToggleLockSelected}
                     stageRef={stageRef}
                     datasetId={figureState.datasetId}
+                    accessibleDatasetIds={new Set(figureState.accessibleDatasetIds || [])}
                     isPendingApproval={!!figureState.activePreview}
                     pendingPanelId={figureState.activePreview?.panelId || null}
                     layoutTransitionKey={layoutTransitionKey}
@@ -911,8 +989,9 @@ export default function App() {
                 isCollapsed={isRightSidebarCollapsed}
                 onToggleCollapse={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
                 selectedDatasetId={domainState.selectedDatasetId}
-                availableDatasets={domainState.datasets}
+                availableDatasets={accessibleDatasets}
                 onSelectDataset={(dsId) => globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: dsId })}
+                onUpdateDataset={(datasetId, rows) => globalDomainStore.dispatch({ type: 'UPDATE_DATASET', payload: { id: datasetId, rows } })}
               />
             </>
           )}
@@ -939,9 +1018,11 @@ export default function App() {
             <AnalysesView
               figure={figure}
               selectedDatasetId={domainState.selectedDatasetId}
-              availableDatasets={domainState.datasets}
+              availableDatasets={accessibleDatasets}
+              analysisRuns={domainState.analysisRuns}
               onSelectDataset={(datasetId) => globalDomainStore.dispatch({ type: 'SELECT_DATASET', payload: datasetId })}
               onUpdatePanelSpec={handleUpdatePanelSpec}
+              onRecordAnalysisRun={(run) => globalDomainStore.dispatch({ type: 'RECORD_ANALYSIS_RUN', payload: run })}
               onNavigate={setCurrentView}
             />
           )}
@@ -959,10 +1040,7 @@ export default function App() {
           {currentView === 'settings' && figure && (
             <SettingsView
               figure={figure}
-              onUpdateCanvasSize={(w, h) =>
-                handleUpdateCanvasSettings({ width: w, height: h, dpi: 300, background: '#ffffff' })
-              }
-              onNavigate={setCurrentView}
+              onUpdateCanvasSettings={handleUpdateCanvasSettings}
             />
           )}
 
@@ -988,9 +1066,11 @@ export default function App() {
           onClose={() => setIsProvenanceDrawerOpen(false)}
           provenanceLedger={figureState.provenanceLedger}
           currentRevision={figureState.currentRevision}
-          onRestoreRevision={(rev) =>
-            globalFigureStore.dispatch({ type: 'RESTORE_SNAPSHOT', payload: { targetRevision: rev } })
-          }
+          onRestoreRevision={(rev) => {
+            globalFigureStore.dispatch({ type: 'RESTORE_SNAPSHOT', payload: { targetRevision: rev } });
+            setRestoreMessage(`Restored revision ${rev}`);
+            window.setTimeout(() => setRestoreMessage(null), 3500);
+          }}
         />
 
         {/* WebMCP Dev Panel */}

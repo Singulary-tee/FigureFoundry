@@ -14,7 +14,17 @@ export function loadFigureFromStorage(): MultiPanelFigure {
     if (!raw) return DEFAULT_MULTIPANEL_FIGURE;
     const parsed = JSON.parse(raw) as MultiPanelFigure;
     if (parsed && Array.isArray(parsed.panels) && parsed.panels.length > 0) {
-      return parsed;
+      const starterNeedsRefresh = parsed.id === DEFAULT_MULTIPANEL_FIGURE.id && parsed.panels.some((panel) =>
+        panel.spec.kind !== 'text-caption' && (!panel.spec.datasetId || Boolean(panel.spec.bindingIssues?.length)),
+      );
+      if (starterNeedsRefresh) return DEFAULT_MULTIPANEL_FIGURE;
+      return {
+        ...parsed,
+        canvasSize: {
+          ...parsed.canvasSize,
+          dpi: Number.isFinite(parsed.canvasSize?.dpi) ? parsed.canvasSize.dpi : 300,
+        },
+      };
     }
   } catch (err) {
     console.warn('Failed to load figure from localStorage:', err);

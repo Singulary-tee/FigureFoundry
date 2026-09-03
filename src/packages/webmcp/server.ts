@@ -1,4 +1,4 @@
-import { WebMcpToolDefinition, WebMcpCallLog, FigureState } from '../../types';
+import { DatasetProfile, WebMcpToolDefinition, WebMcpCallLog, FigureState } from '../../types';
 import { profileDataset } from '../data-model/profiler';
 import { validateFigureSpec } from '../validation/validator';
 import { FigureDomainAction, ApplyResult } from '../domain/reducer';
@@ -6,9 +6,73 @@ import { globalFigureStore, FigureStore } from '../domain/store';
 import { proposeFigureRevision, applyFigureRevision } from '../domain/commands';
 import { BASE_WEBMCP_TOOLS, getDatasetAwareTools } from './tools';
 import { WebMcpAgent } from './types';
-import { runTwoGroupTtest } from '../stats';
+import { calculateFrequencyDistribution, runLinearRegression, runPearsonCorrelation, runTwoGroupTtest, summarizeNumericFields } from '../stats';
 
 export { BASE_WEBMCP_TOOLS as WEBMCP_TOOLS, getDatasetAwareTools };
+
+function unavailableAnalysisReason(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Record<string, unknown>;
+  const strings: string[] = [];
+  const visit = (entry: unknown, depth = 0) => {
+    if (depth > 4 || entry === null || entry === undefined) return;
+    if (typeof entry === 'string') {
+      strings.push(entry);
+      return;
+    }
+    if (Array.isArray(entry)) {
+      entry.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    if (typeof entry === 'object') {
+      Object.values(entry).forEach((item) => visit(item, depth + 1));
+    }
+  };
+  visit(candidate);
+  const unavailableSummary = strings
+    .filter((summary) => /unavailable|insufficient|not estimable/i.test(summary))
+    .sort((left, right) => right.length - left.length)[0];
+  if (unavailableSummary) return unavailableSummary;
+  if (Array.isArray(candidate.columns) && candidate.columns.length > 0 && candidate.columns.every((column) => (
+    column && typeof column === 'object' && (column as Record<string, unknown>).count === 0
+  ))) {
+    return 'No finite observations were available for the selected field(s).';
+  }
+  return undefined;
+}
+
+function recordAnalysisRun(
+  dispatch: (action: FigureDomainAction) => any,
+  state: FigureState,
+  toolName: string,
+  inputArgs: Record<string, any>,
+  result: any,
+  actor: 'agent' | 'human',
+) {
+  if (!result?.datasetId) return;
+  const operation = result.operation || (toolName === 'analyze_group_comparison' ? 'group-comparison' : toolName);
+  const fields = Array.isArray(result.fields)
+    ? result.fields
+    : toolName === 'analyze_group_comparison'
+      ? [inputArgs.valueField, inputArgs.groupField].filter((field): field is string => typeof field === 'string')
+      : [];
+  const analysisResult = toolName === 'analyze_dataset' ? result.result : result;
+  const unavailableReason = unavailableAnalysisReason(analysisResult);
+  dispatch({
+    type: 'RECORD_ANALYSIS_RUN',
+    payload: {
+      figureId: (state as any).activeFigureId || undefined,
+      datasetId: result.datasetId,
+      operation,
+      fields,
+      inputs: inputArgs,
+      result: analysisResult,
+      status: unavailableReason ? 'unavailable' : 'complete',
+      unavailableReason,
+      actor,
+    },
+  } as any);
+}
 
 export class WebMcpServer {
   private dispatchDomainAction: (action: FigureDomainAction) => any;
@@ -30,10 +94,55 @@ export class WebMcpServer {
 
   public listTools(): WebMcpToolDefinition[] {
     const state = this.getState();
-    if (state?.datasetId) {
-      return getDatasetAwareTools(state.datasetId, state.currentRevision);
+    const accessibleDatasetIds = this.getAccessibleDatasetIds(state);
+    const schemaDatasetId = ((state as any).datasets || []).find((dataset: any) =>
+      accessibleDatasetIds.has(dataset.id),
+    )?.id;
+    if (schemaDatasetId) {
+      return getDatasetAwareTools(
+        schemaDatasetId,
+        state.currentRevision,
+        Array.from(accessibleDatasetIds),
+      );
     }
     return BASE_WEBMCP_TOOLS;
+  }
+
+  private getAccessibleDatasetIds(state: FigureState): Set<string> {
+    const explicit = (state as any).accessibleDatasetIds;
+    return Array.isArray(explicit) ? new Set(explicit) : new Set();
+  }
+
+  private getActiveProjectFigureIds(state: FigureState): Set<string> | null {
+    const activeProjectId = (state as any).activeProjectId;
+    const projects = (state as any).projects;
+    if (typeof activeProjectId !== 'string' || !Array.isArray(projects)) return null;
+    const activeProject = projects.find((project: any) => project.id === activeProjectId);
+    return activeProject && Array.isArray(activeProject.figureIds) ? new Set(activeProject.figureIds) : new Set();
+  }
+
+  private resolveDatasetProfile(state: FigureState, requestedDatasetId?: unknown): DatasetProfile {
+    const accessibleDatasetIds = this.getAccessibleDatasetIds(state);
+    const datasetId = typeof requestedDatasetId === 'string' && requestedDatasetId
+      ? requestedDatasetId
+      : state.datasetId;
+    if (!datasetId || !accessibleDatasetIds.has(datasetId)) {
+      throw new Error(`Dataset '${datasetId || '(none)'}' is not accessible in the active project/workspace scope.`);
+    }
+    const record = ((state as any).datasets || []).find((dataset: any) => dataset.id === datasetId);
+    if (record) return profileDataset(record);
+    const available = ((state as any).datasets || []).map((dataset: any) => dataset.id);
+    throw new Error(`Dataset '${datasetId}' is not loaded. Available datasets: ${available.join(', ') || 'none'}.`);
+  }
+
+  private requireField(profile: DatasetProfile, field: unknown, role: string, allowedTypes?: DatasetProfile['fields'][number]['type'][]): string {
+    if (typeof field !== 'string' || !field) throw new Error(`${role} is required.`);
+    const metadata = profile.fields.find((candidate) => candidate.name === field);
+    if (!metadata) throw new Error(`Field '${field}' does not exist in dataset '${profile.datasetId}'. Available fields: ${profile.fields.map((candidate) => candidate.name).join(', ')}.`);
+    if (allowedTypes && !allowedTypes.includes(metadata.type)) {
+      throw new Error(`${role} '${field}' must be ${allowedTypes.join(' or ')}; it is ${metadata.type}.`);
+    }
+    return field;
   }
 
   public async executeTool(
@@ -51,16 +160,37 @@ export class WebMcpServer {
     try {
       switch (toolName) {
         case 'inspect_figures':
-          result = { figures: (currentState as any).figures || [], activeFigureId: (currentState as any).activeFigureId || null };
+          {
+            const activeProjectFigureIds = this.getActiveProjectFigureIds(currentState);
+            const figures = ((currentState as any).figures || []).filter((figure: any) =>
+              !activeProjectFigureIds || activeProjectFigureIds.has(figure.id),
+            );
+            result = { figures, activeFigureId: (currentState as any).activeFigureId || null };
+          }
           break;
-        case 'inspect_dataset_catalog':
-          result = { datasets: (currentState as any).datasets || [], selectedDatasetId: currentState.datasetId };
+        case 'inspect_dataset_catalog': {
+          const accessibleDatasetIds = this.getAccessibleDatasetIds(currentState);
+          result = {
+            selectedDatasetId: currentState.datasetId || null,
+            datasets: ((currentState as any).datasets || []).filter((dataset: any) => accessibleDatasetIds.has(dataset.id)).map((dataset: any) => {
+              const profile = profileDataset(dataset);
+              return {
+                id: dataset.id,
+                title: dataset.title || dataset.name || dataset.id,
+                description: dataset.description || '',
+                rowCount: profile.rowCount,
+                fieldCount: profile.fields.length,
+                selected: dataset.id === currentState.datasetId,
+              };
+            }),
+          };
           break;
+        }
         case 'inspect_selected_panel':
           result = { panelId: (currentState as any).selectedPanelId || null, panel: (currentState as any).selectedPanel || null };
           break;
         case 'inspect_dataset_fields': {
-          const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
+          const profile = this.resolveDatasetProfile(currentState, inputArgs.datasetId);
           result = {
             datasetId: profile.datasetId,
             rowCount: profile.rowCount,
@@ -77,7 +207,7 @@ export class WebMcpServer {
         }
 
         case 'analyze_group_comparison': {
-          const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
+          const profile = this.resolveDatasetProfile(currentState, inputArgs.datasetId);
           const { valueField, groupField, group1Val, group2Val } = inputArgs;
           const valueMeta = profile.fields.find((field) => field.name === valueField);
           const groupMeta = profile.fields.find((field) => field.name === groupField);
@@ -115,21 +245,63 @@ export class WebMcpServer {
           break;
         }
 
+        case 'analyze_dataset': {
+          const profile = this.resolveDatasetProfile(currentState, inputArgs.datasetId);
+          const operation = inputArgs.operation;
+          if (operation === 'descriptive') {
+            const fields = inputArgs.fields === undefined
+              ? profile.fields.filter((field) => field.type === 'quantitative').map((field) => field.name)
+              : inputArgs.fields;
+            if (!Array.isArray(fields) || fields.length === 0) throw new Error('Descriptive analysis requires at least one numeric field.');
+            const numericFields = fields.map((field) => this.requireField(profile, field, 'Descriptive field', ['quantitative']));
+            result = { datasetId: profile.datasetId, operation, fields: numericFields, result: { columns: summarizeNumericFields(profile.records, numericFields) } };
+            break;
+          }
+          if (operation === 'frequency') {
+            const field = this.requireField(profile, inputArgs.field, 'Frequency field');
+            result = {
+              datasetId: profile.datasetId,
+              operation,
+              fields: [field],
+              result: calculateFrequencyDistribution(profile.records, field, inputArgs.maxCategories || 50),
+            };
+            break;
+          }
+          if (operation === 'correlation') {
+            const xField = this.requireField(profile, inputArgs.xField, 'Correlation xField', ['quantitative']);
+            const yField = this.requireField(profile, inputArgs.yField, 'Correlation yField', ['quantitative']);
+            result = { datasetId: profile.datasetId, operation, fields: [xField, yField], result: runPearsonCorrelation(profile.records, xField, yField) };
+            break;
+          }
+          if (operation === 'linear-regression') {
+            const xField = this.requireField(profile, inputArgs.xField, 'Regression xField', ['quantitative', 'temporal']);
+            const yField = this.requireField(profile, inputArgs.yField, 'Regression yField', ['quantitative']);
+            result = { datasetId: profile.datasetId, operation, fields: [xField, yField], result: runLinearRegression(profile.records, xField, yField) };
+            break;
+          }
+          if (operation === 'group-comparison') {
+            const valueField = this.requireField(profile, inputArgs.valueField, 'Comparison valueField', ['quantitative']);
+            const groupField = this.requireField(profile, inputArgs.groupField, 'Comparison groupField', ['categorical', 'ordinal']);
+            const analysis = runTwoGroupTtest(profile.records, valueField, groupField, inputArgs.group1Val, inputArgs.group2Val);
+            result = {
+              datasetId: profile.datasetId,
+              operation,
+              fields: [valueField, groupField],
+              result: { ...analysis, groupStats: analysis.groupStats.map(({ values, ...group }) => group) },
+            };
+            break;
+          }
+          throw new Error(`Unsupported analysis operation '${String(operation)}'.`);
+        }
+
         case 'inspect_figure_workspace': {
-          const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
+          const profile = this.resolveDatasetProfile(currentState);
           const lastValidation = currentState.spec ? validateFigureSpec(currentState.spec, profile) : null;
 
-          let scientificQuestion =
-            'How do morphometric measurements (bill length, depth, flipper length, body mass) differ across penguin species and sexes?';
-          if (currentState.datasetId === 'gapminder-life-expectancy') {
-            scientificQuestion =
-              'What is the relationship between GDP per capita and life expectancy across different countries and continents?';
-          } else if (currentState.datasetId === 'seattle-weather') {
-            scientificQuestion =
-              'What are the trends and relationships in precipitation, maximum temperature, and wind speed in Seattle weather over time?';
-          }
+          const scientificQuestion = `What patterns, relationships, differences, or trends are present in ${profile.title}?`;
 
           result = {
+            activeFigureId: (currentState as any).activeFigureId || null,
             targetPanelIds,
             layerOrder: [...((currentState as any).layers || [])].sort((a, b) => a.order - b.order).map((layer: any) => layer.panelId),
             selectedPanelId: (currentState as any).selectedPanelId || null,
@@ -137,12 +309,13 @@ export class WebMcpServer {
               id: panel.id,
               label: panel.label,
               kind: panel.spec?.kind,
+              datasetId: panel.spec?.datasetId || null,
               title: panel.spec?.kind === 'single-chart' ? panel.spec.spec?.title : panel.spec?.title,
               frame: panel.frame,
               agentEditable: targetPanelIds.includes(panel.id),
               spec: panel.spec,
             })),
-            datasetId: currentState.datasetId || 'palmer-penguins',
+            datasetId: currentState.datasetId || null,
             scientificQuestion,
             figureIntent: currentState.spec?.figureIntent || 'comparison',
             revision: currentState.currentRevision,
@@ -195,6 +368,7 @@ export class WebMcpServer {
           }
 
           const targetPanel = ((currentState as any).panels || []).find((panel: any) => panel.id === inputArgs.targetPanelId);
+          const profile = this.resolveDatasetProfile(currentState, inputArgs.datasetId);
           const requestedKind = inputArgs.panelKind || inputArgs.panelSpec?.kind || (inputArgs.encoding ? 'single-chart' : targetPanel?.spec?.kind || 'single-chart');
           const existingSpec = targetPanel?.spec?.kind === 'single-chart' ? targetPanel.spec.spec : targetPanel?.spec;
           const suppliedPanelSpec = inputArgs.panelSpec;
@@ -206,13 +380,16 @@ export class WebMcpServer {
                   title:
                     inputArgs.title ||
                     `${inputArgs.figureIntent?.toUpperCase() || 'FIGURE'}: ${inputArgs.encoding?.y?.field || 'Y'} vs ${inputArgs.encoding?.x?.field || 'X'}`,
-                  subtitle: `Analytical mark: ${inputArgs.mark} | Intent: ${inputArgs.figureIntent}`,
+                  subtitle: inputArgs.subtitle || `Analytical mark: ${inputArgs.mark} | Intent: ${inputArgs.figureIntent}`,
                   figureIntent: inputArgs.figureIntent,
                   mark: inputArgs.mark,
                   encoding: inputArgs.encoding,
                   showsRawObservations: Boolean(inputArgs.showsRawObservations),
                   uncertaintyEncoding: inputArgs.uncertaintyEncoding || null,
                   errorBarMode: inputArgs.errorBarMode || existingSpec?.errorBarMode || 'none',
+                  trendline: inputArgs.trendline || existingSpec?.trendline || 'none',
+                  facetBy: inputArgs.facetBy || existingSpec?.facetBy,
+                  filters: inputArgs.filters ?? existingSpec?.filters,
                 }
               : existingSpec;
 
@@ -253,6 +430,8 @@ export class WebMcpServer {
             basedOnRevision: currentState.currentRevision,
             actor,
             panelKind: requestedKind,
+            datasetId: profile.datasetId,
+            datasetProfile: profile,
             workspacePatch: normalizedPatch,
             commandPayload: inputArgs,
           });
@@ -355,7 +534,7 @@ export class WebMcpServer {
           // 4. Mark approved and commit
           this.store.dispatch({
             type: 'APPROVE_PREVIEW_UI',
-            payload: { previewId: inputArgs.previewId },
+            payload: { previewId: inputArgs.previewId, source: 'native-confirmation' },
           });
 
           const domainCmdResult = applyFigureRevision(this.store, {
@@ -377,6 +556,10 @@ export class WebMcpServer {
           throw new Error(
             `Unknown WebMCP tool '${toolName}'. Registered tools: ${this.listTools().map((t) => t.name).join(', ')}`
           );
+      }
+
+      if (status === 'success' && (toolName === 'analyze_dataset' || toolName === 'analyze_group_comparison')) {
+        recordAnalysisRun(this.dispatchDomainAction, currentState, toolName, inputArgs, result, actor);
       }
     } catch (err: any) {
       status = 'error';

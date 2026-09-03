@@ -18,11 +18,30 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
   const { width, height } = frame;
   const padding = 16;
   const colors = theme.colors;
+  const requiresPositiveValues = !['Mean Difference (MD)', 'Risk Difference (RD)'].includes(spec.effectMeasure);
+  const hasInvalidStudy = Array.isArray(spec.studies) && spec.studies.some((study) =>
+    !Number.isFinite(study.effect) ||
+    !Number.isFinite(study.ciLower) ||
+    !Number.isFinite(study.ciUpper) ||
+    (requiresPositiveValues && (study.effect <= 0 || study.ciLower <= 0)) ||
+    study.ciLower > study.effect ||
+    study.ciUpper < study.effect,
+  );
+  const hasBindingIssues = !spec.datasetId || Boolean(spec.bindingIssues?.length) || hasInvalidStudy;
+  const hasPooledEstimate = spec.studies.length >= 2 &&
+    Number.isFinite(spec.pooledEstimate?.effect) &&
+    Number.isFinite(spec.pooledEstimate?.ciLower) &&
+    Number.isFinite(spec.pooledEstimate?.ciUpper) &&
+    spec.pooledEstimate.ciLower <= spec.pooledEstimate.effect &&
+    spec.pooledEstimate.effect <= spec.pooledEstimate.ciUpper;
+  const bindingMessage = spec.bindingIssues?.join(' ') || (!spec.datasetId
+    ? 'no dataset is bound to this panel.'
+    : 'the mapped study rows contain invalid or unordered values.');
 
-  const isLogScale = spec?.xAxis?.scale === 'log';
+  const isLogScale = spec?.xAxis?.scale === 'log' && requiresPositiveValues;
   const minVal = isLogScale
     ? (spec?.xAxis?.min && spec.xAxis.min > 0 ? spec.xAxis.min : 0.1)
-    : (Number.isFinite(spec?.xAxis?.min) ? spec.xAxis.min : -1);
+    : (Number.isFinite(spec?.xAxis?.min) && spec.xAxis.min < 0 ? spec.xAxis.min : -1);
   const maxVal = Number.isFinite(spec?.xAxis?.max) && spec.xAxis.max > minVal
     ? spec.xAxis.max
     : (isLogScale ? 10 : 1);
@@ -48,8 +67,12 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
   const topHeaderY = 16;
   const contentStartY = 45;
   const rowHeight = 28;
-  const studiesList = Array.isArray(spec?.studies) ? spec.studies : [];
-  const totalY = contentStartY + studiesList.length * rowHeight + 10;
+  const studiesList = hasBindingIssues ? [] : (Array.isArray(spec?.studies) ? spec.studies : []);
+  // Keep the composited panel legible for arbitrary-size imported datasets.
+  const visibleRowCount = Math.max(1, Math.floor((height - contentStartY - 105) / rowHeight));
+  const visibleStudies = studiesList.slice(0, visibleRowCount);
+  const hiddenStudyCount = Math.max(0, studiesList.length - visibleStudies.length);
+  const totalY = contentStartY + visibleStudies.length * rowHeight + 10;
   const axisY = totalY + 28;
 
   return (
@@ -65,6 +88,20 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
         strokeWidth={1}
         cornerRadius={2}
       />
+
+      {hasBindingIssues && spec.showLabels && (
+        <Text
+          x={padding + 22}
+          y={contentStartY + 24}
+          width={width - padding * 2 - 30}
+          text={`Data unavailable: ${bindingMessage}`}
+          fontSize={11}
+          fontStyle="bold"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          fill={colors.mutedText}
+          wrap="word"
+        />
+      )}
 
       {/* Letter badge "A" */}
       {spec.showLabels && letter && (
@@ -126,12 +163,12 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
       )}
 
       {/* Studies Rows */}
-      {studiesList.map((s, idx) => {
+      {visibleStudies.map((s, idx) => {
         const rowY = contentStartY + idx * rowHeight + 12;
-        const ptX = mapX(s?.effect ?? 1);
-        const ciLeftX = mapX(s?.ciLower ?? 0.5);
-        const ciRightX = mapX(s?.ciUpper ?? 2.0);
-        const weightVal = typeof s?.weight === 'number' && !isNaN(s.weight) ? s.weight : 0;
+        const ptX = mapX(s.effect);
+        const ciLeftX = mapX(s.ciLower);
+        const ciRightX = mapX(s.ciUpper);
+        const weightVal = typeof s.weight === 'number' && Number.isFinite(s.weight) ? s.weight : null;
 
         return (
           <Group key={s?.id || idx}>
@@ -143,7 +180,7 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
                 width={plotLeft - padding - 30}
                 ellipsis={true}
                 wrap="none"
-                text={s?.study || `Study ${idx + 1}`}
+                text={s.study}
                 fontSize={11.5}
                 fontFamily="system-ui, -apple-system, sans-serif"
                 fill={colors.text}
@@ -151,7 +188,7 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
             )}
 
             {/* Error bar CI line */}
-            {spec.showErrorBars && (
+            {spec.showCi95 && spec.showErrorBars && (
               <Line
                 points={[ciLeftX, rowY, ciRightX, rowY]}
                 stroke={colors.primary}
@@ -175,7 +212,7 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
               <Text
                 x={width - 65}
                 y={rowY - 6}
-                text={`${weightVal.toFixed(1)}%`}
+                text={weightVal === null ? 'Not estimable' : `${weightVal.toFixed(1)}%`}
                 fontSize={11.5}
                 fontFamily="system-ui, -apple-system, sans-serif"
                 fill={colors.text}
@@ -185,8 +222,21 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
         );
       })}
 
+      {hiddenStudyCount > 0 && spec.showLabels && (
+        <Text
+          x={padding + 22}
+          y={contentStartY + visibleStudies.length * rowHeight - 6}
+          width={plotLeft - padding - 30}
+          text={`+${hiddenStudyCount} more studies (see Data)`}
+          fontSize={10.5}
+          fontStyle="italic"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          fill={colors.mutedText}
+        />
+      )}
+
       {/* Pooled Estimate Row */}
-      {spec?.pooledEstimate && (
+      {!hasBindingIssues && hasPooledEstimate && (
         <Group>
           {spec.showLabels && (
             <Text
@@ -203,9 +253,9 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
           {/* Diamond Glyph for Pooled Estimate */}
           {spec.showDataPoints && (
             (() => {
-              const eff = spec.pooledEstimate?.effect ?? 1;
-              const lower = spec.pooledEstimate?.ciLower ?? 0.8;
-              const upper = spec.pooledEstimate?.ciUpper ?? 1.2;
+              const eff = spec.pooledEstimate.effect;
+              const lower = spec.pooledEstimate.ciLower;
+              const upper = spec.pooledEstimate.ciUpper;
               const dMidX = mapX(eff);
               const dLeftX = mapX(lower);
               const dRightX = mapX(upper);
@@ -236,7 +286,9 @@ export const ForestPlotKonva: React.FC<ForestPlotKonvaProps> = ({
               y={totalY}
               width={120}
               align="right"
-              text={`${(spec.pooledEstimate?.effect ?? 1).toFixed(2)} (${(spec.pooledEstimate?.ciLower ?? 0.8).toFixed(2)}, ${(spec.pooledEstimate?.ciUpper ?? 1.2).toFixed(2)})`}
+              text={hasPooledEstimate
+                ? `${spec.pooledEstimate.effect.toFixed(2)} (${spec.pooledEstimate.ciLower.toFixed(2)}, ${spec.pooledEstimate.ciUpper.toFixed(2)})`
+                : 'Not estimable'}
               fontSize={11.5}
               fontStyle="bold"
               fontFamily="system-ui, -apple-system, sans-serif"

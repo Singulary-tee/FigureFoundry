@@ -15,7 +15,6 @@ export interface ColumnStats {
   isNormal: boolean;
   outlierCount: number;
 }
-
 export interface GroupStats {
   groupName: string;
   count: number;
@@ -45,6 +44,23 @@ export interface StatisticalTestResult {
   };
 }
 
+export interface FrequencyResult {
+  value: string;
+  count: number;
+  proportion: number;
+}
+
+export interface LinearRegressionResult {
+  slope: number;
+  intercept: number;
+  r: number;
+  r2: number;
+  pValue: number;
+  stars: string;
+  n: number;
+  summary: string;
+}
+
 /** Treat blank and null cells as missing rather than numeric zero. */
 export function toFiniteNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -61,16 +77,16 @@ export function calculateColumnStats(values: number[], fieldName: string): Colum
     return {
       fieldName,
       count: 0,
-      mean: 0,
-      median: 0,
-      stdDev: 0,
-      sem: 0,
-      ci95Lower: 0,
-      ci95Upper: 0,
-      min: 0,
-      max: 0,
-      skewness: 0,
-      isNormal: true,
+      mean: Number.NaN,
+      median: Number.NaN,
+      stdDev: Number.NaN,
+      sem: Number.NaN,
+      ci95Lower: Number.NaN,
+      ci95Upper: Number.NaN,
+      min: Number.NaN,
+      max: Number.NaN,
+      skewness: Number.NaN,
+      isNormal: false,
       outlierCount: 0
     };
   }
@@ -81,7 +97,9 @@ export function calculateColumnStats(values: number[], fieldName: string): Colum
 
   const median = n % 2 === 0 ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : sorted[Math.floor(n / 2)];
 
-  const variance = sorted.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (n > 1 ? n - 1 : 1);
+  const variance = n > 1
+    ? sorted.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (n - 1)
+    : Number.NaN;
   const stdDev = Math.sqrt(variance);
   const sem = stdDev / Math.sqrt(n);
   const ci95Margin = 1.96 * sem;
@@ -89,8 +107,8 @@ export function calculateColumnStats(values: number[], fieldName: string): Colum
   // Skewness calculation
   const m3 = sorted.reduce((acc, v) => acc + Math.pow(v - mean, 3), 0) / n;
   const m2 = variance;
-  const skewness = m2 > 0 ? m3 / Math.pow(m2, 1.5) : 0;
-  const isNormal = Math.abs(skewness) < 0.8;
+  const skewness = m2 > 0 ? m3 / Math.pow(m2, 1.5) : Number.NaN;
+  const isNormal = Number.isFinite(skewness) && Math.abs(skewness) < 0.8;
 
   // Outliers via 1.5 * IQR
   const q1 = sorted[Math.floor(n * 0.25)];
@@ -117,7 +135,44 @@ export function calculateColumnStats(values: number[], fieldName: string): Colum
   };
 }
 
+export function summarizeNumericFields(records: Record<string, unknown>[], fields: string[]): ColumnStats[] {
+  return fields.map((field) => calculateColumnStats(
+    records.map((record) => toFiniteNumber(record[field])).filter((value): value is number => value !== null),
+    field,
+  ));
+}
+
+export function calculateFrequencyDistribution(
+  records: Record<string, unknown>[],
+  field: string,
+  maxCategories = 50,
+): { field: string; observedCount: number; missingCount: number; categories: FrequencyResult[] } {
+  const counts = new Map<string, number>();
+  let missingCount = 0;
+  records.forEach((record) => {
+    const value = record[field];
+    if (value === null || value === undefined || value === '') {
+      missingCount += 1;
+      return;
+    }
+    const key = String(value);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  const observedCount = records.length - missingCount;
+  return {
+    field,
+    observedCount,
+    missingCount,
+    categories: Array.from(counts, ([value, count]) => ({
+      value,
+      count,
+      proportion: observedCount ? Number((count / observedCount).toFixed(4)) : 0,
+    })).sort((left, right) => right.count - left.count || left.value.localeCompare(right.value)).slice(0, maxCategories),
+  };
+}
+
 export function formatSignificanceStars(pValue: number): string {
+  if (!Number.isFinite(pValue)) return 'unavailable';
   if (pValue < 0.0001) return '****';
   if (pValue < 0.001) return '***';
   if (pValue < 0.01) return '**';
@@ -177,10 +232,10 @@ export function runTwoGroupTtest(
     return {
       testName: "Welch's Two-Sample t-test",
       statisticName: 't',
-      statisticValue: 0,
+      statisticValue: Number.NaN,
       degreesOfFreedom: Math.max(0, n1 + n2 - 2),
-      pValue: 1.0,
-      significanceStars: 'ns',
+      pValue: Number.NaN,
+      significanceStars: 'unavailable',
       groupStats: [
         { groupName: g1Key, values: g1Vals, ...s1 },
         { groupName: g2Key, values: g2Vals, ...s2 }
@@ -189,8 +244,8 @@ export function runTwoGroupTtest(
       recommendedAnnotation: {
         group1: g1Key,
         group2: g2Key,
-        pValue: 1.0,
-        stars: 'ns'
+        pValue: Number.NaN,
+        stars: 'unavailable'
       }
     };
   }
@@ -199,7 +254,28 @@ export function runTwoGroupTtest(
   const v1 = Math.pow(s1.stdDev, 2) / n1;
   const v2 = Math.pow(s2.stdDev, 2) / n2;
   const seDiff = Math.sqrt(v1 + v2);
-  const tStat = seDiff > 0 ? (s1.mean - s2.mean) / seDiff : 0;
+  if (!(seDiff > 0)) {
+    return {
+      testName: "Welch's Two-Sample t-test",
+      statisticName: 't',
+      statisticValue: Number.NaN,
+      degreesOfFreedom: 0,
+      pValue: Number.NaN,
+      significanceStars: 'unavailable',
+      groupStats: [
+        { groupName: g1Key, values: g1Vals, ...s1 },
+        { groupName: g2Key, values: g2Vals, ...s2 }
+      ],
+      summary: `Insufficient variation to compute t-test (${g1Key}: n=${n1}, ${g2Key}: n=${n2}).`,
+      recommendedAnnotation: {
+        group1: g1Key,
+        group2: g2Key,
+        pValue: Number.NaN,
+        stars: 'unavailable'
+      }
+    };
+  }
+  const tStat = (s1.mean - s2.mean) / seDiff;
 
   // Welch-Satterthwaite degrees of freedom
   const dfNumerator = Math.pow(v1 + v2, 2);
@@ -250,7 +326,7 @@ export function runPearsonCorrelation(
 
   const n = xVals.length;
   if (n < 3) {
-    return { r: 0, r2: 0, pValue: 1, stars: 'ns', n, summary: 'Insufficient points for correlation' };
+    return { r: Number.NaN, r2: Number.NaN, pValue: Number.NaN, stars: 'unavailable', n, summary: 'Insufficient points for correlation' };
   }
 
   const meanX = xVals.reduce((a, b) => a + b, 0) / n;
@@ -268,11 +344,14 @@ export function runPearsonCorrelation(
     denY += dy * dy;
   }
 
-  const r = denX > 0 && denY > 0 ? num / Math.sqrt(denX * denY) : 0;
+  if (!(denX > 0 && denY > 0)) {
+    return { r: Number.NaN, r2: Number.NaN, pValue: Number.NaN, stars: 'unavailable', n, summary: 'Correlation is unavailable because at least one selected field has no variation.' };
+  }
+  const r = num / Math.sqrt(denX * denY);
   const r2 = r * r;
 
-  const t = Math.abs(r) < 1 ? (r * Math.sqrt(n - 2)) / Math.sqrt(1 - r2) : 99;
-  const pValue = Math.max(0.00001, 2 * (1 - normalCdf(Math.abs(t))));
+  const t = Math.abs(r) < 1 ? Math.abs(r) * Math.sqrt((n - 2) / Math.max(Number.EPSILON, 1 - r2)) : Infinity;
+  const pValue = studentTwoSidedPValue(t, n - 2);
   const stars = formatSignificanceStars(pValue);
 
   return {
@@ -285,9 +364,47 @@ export function runPearsonCorrelation(
   };
 }
 
-function normalCdf(x: number): number {
-  const t = 1 / (1 + 0.2316419 * Math.abs(x));
-  const d = 0.3989423 * Math.exp(-x * x / 2);
-  const prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
-  return x >= 0 ? 1 - prob : prob;
+function toRegressionNumber(value: unknown): number | null {
+  const numeric = toFiniteNumber(value);
+  if (numeric !== null) return numeric;
+  if (typeof value === 'string') {
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+  return null;
+}
+
+/** Fits an ordinary least-squares line; temporal x-values are treated as timestamps. */
+export function runLinearRegression(
+  records: Record<string, unknown>[],
+  xField: string,
+  yField: string,
+): LinearRegressionResult {
+  const points = records.map((record) => ({ x: toRegressionNumber(record[xField]), y: toFiniteNumber(record[yField]) }))
+    .filter((point): point is { x: number; y: number } => point.x !== null && point.y !== null);
+  const n = points.length;
+  if (n < 3) throw new Error(`Linear regression requires at least 3 complete observations; found ${n}.`);
+
+  const meanX = points.reduce((sum, point) => sum + point.x, 0) / n;
+  const meanY = points.reduce((sum, point) => sum + point.y, 0) / n;
+  const sumXX = points.reduce((sum, point) => sum + (point.x - meanX) ** 2, 0);
+  const sumYY = points.reduce((sum, point) => sum + (point.y - meanY) ** 2, 0);
+  if (sumXX === 0 || sumYY === 0) throw new Error('Linear regression requires variation in both selected fields.');
+  const sumXY = points.reduce((sum, point) => sum + (point.x - meanX) * (point.y - meanY), 0);
+  const slope = sumXY / sumXX;
+  const intercept = meanY - slope * meanX;
+  const r = sumXY / Math.sqrt(sumXX * sumYY);
+  const r2 = r ** 2;
+  const t = Math.abs(r) < 1 ? Math.abs(r) * Math.sqrt((n - 2) / Math.max(Number.EPSILON, 1 - r2)) : Infinity;
+  const pValue = studentTwoSidedPValue(t, n - 2);
+  return {
+    slope: Number(slope.toPrecision(8)),
+    intercept: Number(intercept.toPrecision(8)),
+    r: Number(r.toFixed(4)),
+    r2: Number(r2.toFixed(4)),
+    pValue: Number(pValue.toFixed(6)),
+    stars: formatSignificanceStars(pValue),
+    n,
+    summary: `Linear regression of ${yField} on ${xField}: slope = ${slope.toPrecision(5)}, intercept = ${intercept.toPrecision(5)}, R² = ${r2.toFixed(3)}, p ${pValue < 0.001 ? '< 0.001' : '= ' + pValue.toFixed(3)} (n=${n}).`,
+  };
 }

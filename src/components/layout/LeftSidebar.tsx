@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import logo from '../../assets/logo.webp';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Folder,
@@ -24,6 +23,7 @@ import {
   MoveDown,
   Undo2,
   Redo2,
+  History,
   Sun,
   Moon,
   Download,
@@ -49,6 +49,8 @@ interface LeftSidebarProps {
   onToggleElement: (elementKey: string) => void;
   onAddNewPanel: () => void;
   onDeleteLayer?: (panelId: string) => void;
+  onRenameLayer?: (panelId: string, name: string) => void;
+  onDeleteFigure?: (figureId: string) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   // Consolidated Top Bar Controls
@@ -64,6 +66,7 @@ interface LeftSidebarProps {
   onExportSvg?: () => void;
   onExportJson?: () => void;
   onOpenWebMcpDev?: () => void;
+  onOpenProvenance?: () => void;
   saveStatus?: 'saved' | 'saving';
   // Additional workspace/editor parameters
   figures?: any[];
@@ -73,6 +76,13 @@ interface LeftSidebarProps {
   onSwitchFigure?: (figId: string) => void;
   onCreateFigure?: (name?: string) => void;
   onSelectDataset?: (dsId: string) => void;
+  onCreateWorkspace?: () => void;
+  workspaceName?: string;
+  workspaces?: { id: string; name: string }[];
+  activeWorkspaceId?: string;
+  onSwitchWorkspace?: (workspaceId: string) => void;
+  onRenameWorkspace?: (name: string) => void;
+  onDeleteWorkspace?: () => void;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
@@ -87,6 +97,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onToggleElement,
   onAddNewPanel,
   onDeleteLayer,
+  onRenameLayer,
+  onDeleteFigure,
   isCollapsed,
   onToggleCollapse,
   figureTitle = figure.name || 'Untitled Figure',
@@ -101,6 +113,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onExportSvg,
   onExportJson,
   onOpenWebMcpDev,
+  onOpenProvenance,
   saveStatus = 'saved',
   figures = [],
   activeFigureId,
@@ -109,9 +122,46 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onSwitchFigure,
   onCreateFigure,
   onSelectDataset,
+  onCreateWorkspace,
+  workspaceName = 'Workspace',
+  workspaces = [],
+  activeWorkspaceId,
+  onSwitchWorkspace,
+  onRenameWorkspace,
+  onDeleteWorkspace,
 }) => {
   const [isFigureExpanded, setIsFigureExpanded] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState | null>(null);
+  const [openQuickMenu, setOpenQuickMenu] = useState<string | null>(null);
+  const [editingFigureId, setEditingFigureId] = useState<string | null>(null);
+  const [figureNameDraft, setFigureNameDraft] = useState('');
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [layerNameDraft, setLayerNameDraft] = useState('');
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [workspaceEditing, setWorkspaceEditing] = useState(false);
+  const [workspaceDraft, setWorkspaceDraft] = useState(workspaceName);
+
+  useEffect(() => {
+    if (!openQuickMenu && !workspaceMenuOpen) return;
+    const closeMenusOnOutsidePointer = (event: PointerEvent) => {
+      if (!(event.target as HTMLElement).closest('[data-options-menu], [data-options-trigger]')) {
+        setOpenQuickMenu(null);
+        setWorkspaceMenuOpen(false);
+      }
+    };
+    const closeMenusOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenQuickMenu(null);
+        setWorkspaceMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', closeMenusOnOutsidePointer);
+    document.addEventListener('keydown', closeMenusOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeMenusOnOutsidePointer);
+      document.removeEventListener('keydown', closeMenusOnEscape);
+    };
+  }, [openQuickMenu, workspaceMenuOpen]);
 
   // Selected panel's spec element toggles
   const isEditorMode = ['figures', 'data', 'analyses', 'notes'].includes(activeView);
@@ -185,6 +235,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 >
                   <FileText className="w-4 h-4" />
                 </button>
+                {onOpenProvenance && (
+                  <button
+                    onClick={onOpenProvenance}
+                    className="p-2 rounded-md mb-2 cursor-pointer transition-colors text-[#71717a] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a]"
+                    title="Revision History"
+                  >
+                    <History className="w-4 h-4" />
+                  </button>
+                )}
               </>
             ) : (
               // Outer shell mode collapsed: navigate between views
@@ -232,13 +291,6 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   title="Notes"
                 >
                   <FileText className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => onSelectView('figures')}
-                  className="p-2 rounded-md mb-2 cursor-pointer text-[#71717a] hover:bg-[#f4f4f5] dark:hover:bg-[#27272a]"
-                  title="Open Figure Editor"
-                >
-                  <ImageIcon className="w-4 h-4 text-[#24b47e]" />
                 </button>
               </>
             )}
@@ -343,6 +395,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       <FileText className="w-4 h-4" />
                       <span>Manuscript Notes</span>
                     </button>
+                    {onOpenProvenance && (
+                      <button
+                        onClick={onOpenProvenance}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold text-[#71717a] dark:text-[#a1a1aa] hover:bg-[#f4f4f5] dark:hover:bg-[#1f1f23] hover:text-[#0f172a] dark:hover:text-[#f4f4f5] transition-colors cursor-pointer"
+                      >
+                        <History className="w-4 h-4" />
+                        <span>Revision History</span>
+                      </button>
+                    )}
                   </nav>
                 </div>
 
@@ -369,18 +430,21 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       {figures.map((fig) => {
                         const isActive = fig.id === figure.id || fig.id === activeFigureId;
                         return (
-                          <button
-                            key={fig.id}
-                            onClick={() => onSwitchFigure && onSwitchFigure(fig.id)}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-left transition-colors cursor-pointer ${
-                              isActive
-                                ? 'bg-[#24b47e]/10 text-[#24b47e] font-bold'
-                                : 'text-[#71717a] hover:bg-[#f4f4f5] dark:text-[#a1a1aa] dark:hover:bg-[#27272a]'
-                            }`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#24b47e]' : 'bg-transparent border border-zinc-400'}`} />
-                            <span className="truncate">{fig.name}</span>
-                          </button>
+                          <div key={fig.id} className="relative group">
+                            <button
+                              onClick={() => onSwitchFigure && onSwitchFigure(fig.id)}
+                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 pr-8 rounded-lg text-xs font-semibold text-left transition-colors cursor-pointer ${
+                                isActive
+                                  ? 'bg-[#24b47e]/10 text-[#24b47e] font-bold'
+                                  : 'text-[#71717a] hover:bg-[#f4f4f5] dark:text-[#a1a1aa] dark:hover:bg-[#27272a]'
+                              }`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#24b47e]' : 'bg-transparent border border-zinc-400'}`} />
+                              {editingFigureId === fig.id ? <input autoFocus value={figureNameDraft} onChange={(event) => setFigureNameDraft(event.target.value)} onClick={(event) => event.stopPropagation()} onBlur={() => { const name = figureNameDraft.trim(); if (name) { onSwitchFigure?.(fig.id); onRenameFigure?.(name); } setEditingFigureId(null); }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditingFigureId(null); }} aria-label="Figure name" className="min-w-0 w-full rounded border border-[#24b47e] bg-white px-1 py-0.5 text-xs outline-none dark:bg-[#18181b]" /> : <span className="truncate">{fig.name}</span>}
+                            </button>
+                            <button type="button" data-options-trigger onClick={() => setOpenQuickMenu(openQuickMenu === `figure-${fig.id}` ? null : `figure-${fig.id}`)} className="absolute right-1 top-1 rounded p-0.5 text-[#71717a] opacity-70 hover:bg-white hover:text-[#0f172a] dark:hover:bg-[#27272a] dark:hover:text-white" title="Figure quick options" aria-label={`Figure quick options for ${fig.name}`}><MoreVertical className="h-3.5 w-3.5" /></button>
+                            {openQuickMenu === `figure-${fig.id}` && <div data-options-menu className="absolute right-0 top-7 z-20 w-36 rounded-md border border-[#e4e4e7] bg-white p-1 shadow-lg dark:border-[#27272a] dark:bg-[#18181b]"><button type="button" onClick={() => { setFigureNameDraft(fig.name); setEditingFigureId(fig.id); setOpenQuickMenu(null); }} className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-[#f4f4f5] dark:hover:bg-[#27272a]">Rename figure</button><button type="button" onClick={() => { setOpenQuickMenu(null); setConfirmDelete({ isOpen: true, title: `Delete Figure “${fig.name}”`, description: 'This removes the figure from the active project.', confirmLabel: 'Delete Figure', onConfirm: () => onDeleteFigure?.(fig.id) }); }} className="block w-full rounded px-2 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30">Delete figure</button></div>}
+                          </div>
                         );
                       })}
                     </div>
@@ -464,7 +528,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                                   <div
                                     key={layer.id}
                                     onClick={() => onSelectPanel(layer.panelId)}
-                                    className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer group ${
+                                    className={`relative flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer group ${
                                       isSelected
                                         ? 'bg-[#f4f4f5] dark:bg-[#27272a] font-semibold text-[#0f172a] dark:text-[#f4f4f5]'
                                         : 'text-[#71717a] dark:text-[#a1a1aa] hover:bg-[#fafafa] dark:hover:bg-[#1f1f23]'
@@ -472,10 +536,12 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                                   >
                                     <div className="flex items-center gap-2 min-w-0">
                                       <FileSpreadsheet className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
-                                      <span className="truncate">{panel?.label || layer.name}</span>
+                                      {editingLayerId === layer.panelId ? <input autoFocus value={layerNameDraft} onChange={(event) => setLayerNameDraft(event.target.value)} onClick={(event) => event.stopPropagation()} onBlur={() => { const name = layerNameDraft.trim(); if (name) onRenameLayer?.(layer.panelId, name); setEditingLayerId(null); }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditingLayerId(null); }} aria-label="Layer name" className="min-w-0 w-full rounded border border-[#24b47e] bg-white px-1 py-0.5 text-xs outline-none dark:bg-[#18181b]" /> : <span className="truncate">{panel?.label || layer.name}</span>}
                                     </div>
 
-                                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                                    <div className="flex items-center gap-1">
+                                      <button type="button" data-options-trigger onClick={(e) => { e.stopPropagation(); setOpenQuickMenu(openQuickMenu === `layer-${layer.panelId}` ? null : `layer-${layer.panelId}`); }} title="Layer quick options" aria-label={`Layer quick options for ${panel?.label || layer.name}`} className="rounded p-0.5 text-[#71717a] opacity-80 hover:bg-white hover:text-[#0f172a] group-hover:opacity-100 dark:hover:bg-[#27272a] dark:hover:text-white"><MoreVertical className="h-3.5 w-3.5" /></button>
+
                                       {/* Reorder Up/Down */}
                                       {index > 0 && (
                                         <button
@@ -556,6 +622,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                                         </button>
                                       )}
                                     </div>
+                                    {openQuickMenu === `layer-${layer.panelId}` && <div data-options-menu className="absolute right-0 top-7 z-30 w-36 rounded-md border border-[#e4e4e7] bg-white p-1 text-left shadow-lg opacity-100 dark:border-[#27272a] dark:bg-[#18181b]"><button type="button" onClick={() => { setEditingLayerId(layer.panelId); setLayerNameDraft(panel?.label || layer.name); setOpenQuickMenu(null); }} className="block w-full rounded px-2 py-1.5 text-xs hover:bg-[#f4f4f5] dark:hover:bg-[#27272a]">Rename layer</button><button type="button" onClick={() => { setOpenQuickMenu(null); setConfirmDelete({ isOpen: true, title: `Delete Layer “${panel?.label || layer.name}”`, description: 'This removes the panel from the figure layout.', confirmLabel: 'Delete Layer', onConfirm: () => onDeleteLayer?.(layer.panelId) }); }} className="block w-full rounded px-2 py-1.5 text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30">Delete layer</button></div>}
                                   </div>
                                 );
                               })}
@@ -645,7 +712,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 {/* Product Logo / Branding */}
                 <div className="flex items-center gap-2.5 px-2.5 py-1">
                   <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                    <img src={logo} alt="FigureFoundry Logo" className="w-8 h-8 shrink-0 object-contain block" referrerPolicy="no-referrer" />
+                    <img src="/logo-mark.webp" alt="FigureFoundry Logo" className="w-8 h-8 shrink-0 object-contain block" referrerPolicy="no-referrer" />
                   </div>
                   <div className="flex flex-col justify-center">
                     <span className="font-bold text-sm tracking-tight text-[#0f172a] dark:text-[#f4f4f5]">
@@ -659,16 +726,23 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
                 <hr className="border-[#e4e4e7] dark:border-[#27272a]" />
 
-                {/* Primary CTA: Jump into Editor! */}
-                <div className="px-1">
-                  <button
-                    onClick={() => onSelectView('figures')}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-[#24b47e] hover:bg-[#1f9d6e] text-white rounded-lg text-xs font-bold transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-xs whitespace-nowrap"
-                  >
-                    <ImageIcon className="w-4 h-4" />
-                    <span>Open Figure Editor</span>
-                  </button>
-                </div>
+                <section aria-label="Workspace switcher" className="rounded-lg border border-[#e4e4e7] bg-[#fafafa] p-2.5 dark:border-[#27272a] dark:bg-[#18181b]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Workspace</span>
+                      {workspaceEditing ? <input autoFocus value={workspaceDraft} onChange={(event) => setWorkspaceDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { if (workspaceDraft.trim()) onRenameWorkspace?.(workspaceDraft.trim()); setWorkspaceEditing(false); } if (event.key === 'Escape') setWorkspaceEditing(false); }} className="mt-1 w-full rounded border border-[#24b47e] bg-white px-1 py-0.5 text-xs font-semibold outline-none dark:bg-[#121212]" aria-label="Workspace name" /> : <span className="mt-1 block truncate text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5]">{workspaceName}</span>}
+                    </div>
+                    {onCreateWorkspace && (
+                      <button type="button" onClick={onCreateWorkspace} title="Create workspace" aria-label="Create workspace" className="rounded p-1 text-[#24b47e] hover:bg-white hover:text-[#168a5b] dark:hover:bg-[#27272a] dark:hover:text-[#52d69a]"><Plus className="h-3.5 w-3.5" /></button>
+                    )}
+                    <div className="relative shrink-0">
+                      <button type="button" data-options-trigger onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)} title="Workspace options" aria-label="Workspace options" className="rounded p-1 text-[#71717a] hover:bg-white hover:text-[#0f172a] dark:hover:bg-[#27272a] dark:hover:text-white"><MoreVertical className="h-3.5 w-3.5" /></button>
+                      {workspaceMenuOpen && <div data-options-menu className="absolute right-0 top-7 z-20 w-40 rounded-md border border-[#e4e4e7] bg-white p-1 shadow-lg opacity-100 dark:border-[#27272a] dark:bg-[#18181b]"><button type="button" onClick={() => { setWorkspaceDraft(workspaceName); setWorkspaceEditing(true); setWorkspaceMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-[#f4f4f5] dark:hover:bg-[#27272a]">Rename workspace</button><button type="button" onClick={() => { setWorkspaceMenuOpen(false); setConfirmDelete({ isOpen: true, title: `Delete workspace “${workspaceName}”`, description: 'This removes the workspace and its projects. A replacement workspace is kept when this is the last one.', confirmLabel: 'Delete workspace', onConfirm: () => onDeleteWorkspace?.() }); }} className="block w-full rounded px-2 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30">Delete workspace</button></div>}
+                    </div>
+                  </div>
+                  <span className="mt-3 block border-t border-[#e4e4e7] pt-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:border-[#27272a]">Other workspaces</span>
+                  <div className="mt-1 space-y-0.5">{workspaces.filter((workspace) => workspace.id !== activeWorkspaceId).map((workspace) => <button key={workspace.id} type="button" onClick={() => onSwitchWorkspace?.(workspace.id)} className="block w-full truncate rounded px-2 py-1.5 text-left text-xs text-[#71717a] hover:bg-white hover:text-[#0f172a] dark:text-[#a1a1aa] dark:hover:bg-[#27272a] dark:hover:text-white">{workspace.name}</button>)}{workspaces.filter((workspace) => workspace.id !== activeWorkspaceId).length === 0 && <span className="block px-2 py-1 text-[11px] text-zinc-400">No other workspaces</span>}</div>
+                </section>
 
                 {/* Navigation Items */}
                 <div className="space-y-1">

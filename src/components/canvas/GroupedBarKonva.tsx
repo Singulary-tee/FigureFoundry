@@ -1,6 +1,7 @@
 import React from 'react';
 import { Group, Rect, Text, Line } from 'react-konva';
 import { GroupedBarSpec, PanelFrame, CanvasTheme } from '../../types/multipanel';
+import { getGroupedBarYAxisRange } from '../../packages/multipanel/groupedBar';
 
 interface GroupedBarKonvaProps {
   spec: GroupedBarSpec;
@@ -18,6 +19,13 @@ export const GroupedBarKonva: React.FC<GroupedBarKonvaProps> = ({
   const { width, height } = frame;
   const padding = 16;
   const colors = theme.colors;
+  const hasInvalidGroup = Array.isArray(spec.groups) && spec.groups.some((group) =>
+    !Number.isFinite(group.treatmentVal) || !Number.isFinite(group.controlVal),
+  );
+  const hasBindingIssues = !spec.datasetId || Boolean(spec.bindingIssues?.length) || hasInvalidGroup;
+  const bindingMessage = spec.bindingIssues?.join(' ') || (!spec.datasetId
+    ? 'no dataset is bound to this panel.'
+    : 'the mapped bar measures contain invalid values.');
 
   const plotLeft = 60;
   const plotRight = width - 40;
@@ -26,17 +34,16 @@ export const GroupedBarKonva: React.FC<GroupedBarKonvaProps> = ({
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
 
-  const yMin = spec?.yAxis?.min ?? 0;
-  const yMax = spec?.yAxis?.max ?? 40;
-  const yDiff = yMax - yMin !== 0 ? yMax - yMin : 1;
+  const { min: yMin, max: yMax } = getGroupedBarYAxisRange(spec.groups, spec.yAxis);
+  const yDiff = yMax - yMin;
 
   const mapY = (val: number) => {
-    if (val == null || isNaN(val)) return plotBottom;
+    if (!Number.isFinite(val)) return plotBottom;
     const frac = (val - yMin) / yDiff;
-    return plotBottom - frac * plotHeight;
+    return Math.max(plotTop, Math.min(plotBottom, plotBottom - frac * plotHeight));
   };
 
-  const groupsList = Array.isArray(spec?.groups) ? spec.groups : [];
+  const groupsList = hasBindingIssues ? [] : (Array.isArray(spec?.groups) ? spec.groups : []);
   const groupCount = groupsList.length || 1;
   const groupSlotWidth = plotWidth / groupCount;
   const barWidth = Math.max(4, Math.min(22, (groupSlotWidth - 12) / 2));
@@ -54,6 +61,20 @@ export const GroupedBarKonva: React.FC<GroupedBarKonvaProps> = ({
         strokeWidth={1}
         cornerRadius={2}
       />
+
+      {hasBindingIssues && spec.showLabels && (
+        <Text
+          x={padding + 12}
+          y={plotTop + 24}
+          width={width - padding * 2 - 24}
+          text={`Data unavailable: ${bindingMessage}`}
+          fontSize={11}
+          fontStyle="bold"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          fill={colors.mutedText}
+          wrap="word"
+        />
+      )}
 
       {/* Letter badge "D" */}
       {spec.showLabels && letter && (
@@ -119,8 +140,8 @@ export const GroupedBarKonva: React.FC<GroupedBarKonvaProps> = ({
             strokeWidth={1}
           />
 
-          {/* Ticks: 0, 10, 20, 30, 40 */}
-          {[0, 10, 20, 30, 40].map((yVal) => {
+          {/* Ticks follow the configured axis range rather than demo values. */}
+          {Array.from({ length: 5 }, (_, index) => yMin + (yDiff * index) / 4).map((yVal) => {
             const yPos = mapY(yVal);
             return (
               <Group key={yVal}>
@@ -142,7 +163,7 @@ export const GroupedBarKonva: React.FC<GroupedBarKonvaProps> = ({
                     x={plotLeft - 28}
                     y={yPos - 6}
                     width={22}
-                    text={String(yVal)}
+                    text={Number.isInteger(yVal) ? String(yVal) : yVal.toFixed(2)}
                     fontSize={10.5}
                     fontFamily="system-ui, -apple-system, sans-serif"
                     fill={colors.text}
@@ -180,17 +201,17 @@ export const GroupedBarKonva: React.FC<GroupedBarKonvaProps> = ({
       {/* Grouped Bars */}
       {groupsList.map((grp, idx) => {
         const groupCenterX = plotLeft + idx * groupSlotWidth + groupSlotWidth / 2;
-        const treatY = mapY(grp?.treatmentVal ?? 0);
+        const treatY = mapY(grp.treatmentVal);
         const treatHeight = Math.max(0, plotBottom - treatY);
 
-        const ctrlY = mapY(grp?.controlVal ?? 0);
+        const ctrlY = mapY(grp.controlVal);
         const ctrlHeight = Math.max(0, plotBottom - ctrlY);
 
         const treatX = groupCenterX - barWidth - 1;
         const ctrlX = groupCenterX + 1;
 
         return (
-          <Group key={grp?.id || idx}>
+          <Group key={grp.id || idx}>
             {/* Treatment bar */}
             {spec.showDataPoints && (
               <Rect
@@ -223,7 +244,7 @@ export const GroupedBarKonva: React.FC<GroupedBarKonvaProps> = ({
                 width={groupSlotWidth}
                 ellipsis={true}
                 wrap="none"
-                text={grp?.category || `Grp ${idx + 1}`}
+                text={grp.category}
                 fontSize={11}
                 fontFamily="system-ui, -apple-system, sans-serif"
                 fill={colors.text}

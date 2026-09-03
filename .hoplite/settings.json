@@ -7,7 +7,7 @@
 	"scripts": {
 		"setup": {
 			"enabled": true,
-      "command": "apt-get update -qq && apt-get install -y -qq git-lfs && npm install --ignore-scripts && npx playwright install chromium"
+      "command": "apt-get update -qq && apt-get install -y -qq git-lfs && npm install --ignore-scripts"
 		},
 		"run": {
 			"enabled": true,
