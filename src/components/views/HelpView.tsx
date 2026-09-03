@@ -87,7 +87,7 @@ export const HelpView: React.FC<HelpViewProps> = ({ onNavigate }) => {
               <strong className="text-[#0f172a] dark:text-[#f4f4f5] block mb-0.5">
                 Funnel Plot Panels:
               </strong>
-              Visualizes effect sizes against standard error with 95% and 99% pseudo-confidence limits for evaluating publication bias and study asymmetry.
+              Visualizes effect sizes against standard error with an optional null-effect reference line for describing study dispersion and asymmetry. Confidence contours are not inferred from incomplete inputs.
             </div>
 
             <div className="p-3 bg-[#f8f9fa] dark:bg-[#121212] rounded-lg border border-[#e4e4e7] dark:border-[#27272a]">
@@ -96,6 +96,16 @@ export const HelpView: React.FC<HelpViewProps> = ({ onNavigate }) => {
               </strong>
               Displays grouped comparative series with error bars and mean values across treatment arms or cohorts.
             </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-[#24b47e]/5 dark:bg-[#24b47e]/10 border border-[#24b47e]/20 rounded-xl flex items-start gap-3">
+          <Layers className="w-4 h-4 text-[#168a5b] dark:text-[#52d69a] mt-0.5 shrink-0" />
+          <div>
+            <h2 className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5]">Layout assistance</h2>
+            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-1 leading-relaxed">
+              Panels snap to a 10 px grid when moved or resized. In the canvas toolbar, use <strong>Tidy layout</strong> to return every plot and caption to a balanced publication-ready grid.
+            </p>
           </div>
         </div>
 

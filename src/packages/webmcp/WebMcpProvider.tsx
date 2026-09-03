@@ -35,7 +35,7 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
   });
 
   const customToolsRef = useRef<Map<string, { definition: WebMcpToolDefinition; executeFn?: (args: any) => Promise<any> }>>(new Map());
-  const [, setVersion] = useState(0);
+  const [toolVersion, setVersion] = useState(0);
   const nativeRegistrationRef = useRef<{
     context: any;
     names: Set<string>;
@@ -58,20 +58,29 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
   );
 
   const registeredTools = useMemo(() => {
-    const datasetTools = [
-      ...getDatasetAwareTools(currentState.datasetId, currentState.currentRevision),
-      ...getPageAwareTools((currentState as any).activeView || 'figures'),
-    ];
+    const accessibleDatasetIds = Array.isArray(currentState.accessibleDatasetIds)
+      ? currentState.accessibleDatasetIds
+      : [];
+    const accessibleDatasets = ((currentState as any).datasets || []).filter((dataset: any) =>
+      accessibleDatasetIds.includes(dataset.id),
+    );
+    const schemaDatasetId = accessibleDatasets.find((dataset: any) => dataset.id === currentState.datasetId)?.id
+      || accessibleDatasets[0]?.id;
+    const datasetTools = schemaDatasetId
+      ? getDatasetAwareTools(schemaDatasetId, currentState.currentRevision, accessibleDatasetIds)
+      : BASE_WEBMCP_TOOLS;
+    const pageTools = getPageAwareTools((currentState as any).activeView || 'figures');
     const customList = Array.from(customToolsRef.current.values()).map(
       (t: { definition: WebMcpToolDefinition; executeFn?: (args: any) => Promise<any> }) => t.definition
     );
 
     const toolMap = new Map<string, WebMcpToolDefinition>();
     datasetTools.forEach(t => toolMap.set(t.name, t));
+    pageTools.forEach(t => toolMap.set(t.name, t));
     customList.forEach(t => toolMap.set(t.name, t));
     
     return Array.from(toolMap.values());
-  }, [currentState.datasetId, currentState.currentRevision, (currentState as any).activeView]);
+  }, [currentState.datasetId, currentState.currentRevision, currentState.accessibleDatasetIds, (currentState as any).activeView, (currentState as any).datasets, toolVersion]);
 
   const executeTool = useCallback(
     async (
@@ -214,35 +223,45 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
         }
       });
 
-      try {
-        if (modelContext.provideContext) {
-          modelContext.provideContext({
-            datasetId: stateRef.current.datasetId,
-            currentRevision: stateRef.current.currentRevision,
-            spec: stateRef.current.spec,
-            activePreview: stateRef.current.activePreview
-          });
-        }
-      } catch (e) {}
-
       return () => {
         if (registration.controller) {
           registration.controller.abort();
-        } else {
-          registration.names.forEach((name) => {
-            try {
-              modelContext.unregisterTool?.(name);
-            } catch {
-              // Polyfill cleanup is best effort.
-            }
-          });
         }
+        registration.names.forEach((name) => {
+          try {
+            modelContext.unregisterTool?.(name);
+          } catch {
+            // A native registration may already have been removed by abort().
+          }
+        });
         if (nativeRegistrationRef.current === registration) {
+          try {
+            modelContext.clearContext?.();
+          } catch {
+            // Context teardown must not prevent tool cleanup.
+          }
           nativeRegistrationRef.current = { context: null, names: new Set() };
         }
       };
     }
   }, [autoRegisterBrowser, registeredTools, executeTool]);
+
+  useEffect(() => {
+    const modelContext = nativeRegistrationRef.current.context;
+    if (!modelContext?.provideContext) return;
+    try {
+      modelContext.provideContext({
+        datasetId: stateRef.current.datasetId,
+        currentRevision: stateRef.current.currentRevision,
+        activeFigureId: (stateRef.current as any).activeFigureId || null,
+        panels: (stateRef.current as any).panels || [],
+        spec: stateRef.current.spec,
+        activePreview: stateRef.current.activePreview,
+      });
+    } catch {
+      // Context publication is best effort and never changes canonical state.
+    }
+  }, [currentState]);
 
   useEffect(() => {
     if (!enablePostMessageTransport) return;
@@ -251,15 +270,17 @@ export const WebMcpProvider: React.FC<WebMcpProviderProps> = ({
       listTools: () => registeredTools,
       executeTool: (name, args, actor) => executeTool(name, args, actor),
       getContext: () => ({
-        datasetId: currentState.datasetId,
-        currentRevision: currentState.currentRevision,
-        spec: currentState.spec,
-        activePreview: currentState.activePreview
+        datasetId: stateRef.current.datasetId,
+        currentRevision: stateRef.current.currentRevision,
+        activeFigureId: (stateRef.current as any).activeFigureId || null,
+        panels: (stateRef.current as any).panels || [],
+        spec: stateRef.current.spec,
+        activePreview: stateRef.current.activePreview,
       })
     });
 
     return cleanup;
-  }, [enablePostMessageTransport, registeredTools, executeTool, currentState]);
+  }, [enablePostMessageTransport, registeredTools, executeTool]);
 
   const value: WebMcpContextValue = useMemo(
     () => ({

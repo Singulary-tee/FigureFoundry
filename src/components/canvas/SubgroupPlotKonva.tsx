@@ -18,9 +18,24 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
   const { width, height } = frame;
   const padding = 16;
   const colors = theme.colors;
+  const isLinearScale = spec?.xAxis?.scale === 'linear';
+  const hasInvalidSubgroup = Array.isArray(spec.subgroups) && spec.subgroups.some((subgroup) =>
+    !Number.isFinite(subgroup.effect) ||
+    !Number.isFinite(subgroup.ciLower) ||
+    !Number.isFinite(subgroup.ciUpper) ||
+    (!isLinearScale && (subgroup.effect <= 0 || subgroup.ciLower <= 0)) ||
+    subgroup.ciLower > subgroup.effect ||
+    subgroup.ciUpper < subgroup.effect,
+  );
+  const hasBindingIssues = !spec.datasetId || Boolean(spec.bindingIssues?.length) || hasInvalidSubgroup;
+  const bindingMessage = spec.bindingIssues?.join(' ') || (!spec.datasetId
+    ? 'no dataset is bound to this panel.'
+    : 'the mapped subgroup rows contain invalid or unordered values.');
 
-  const minVal = spec?.xAxis?.min && spec.xAxis.min > 0 ? spec.xAxis.min : 0.1;
-  const maxVal = spec?.xAxis?.max && spec.xAxis.max > minVal ? spec.xAxis.max : 10;
+  const minVal = isLinearScale
+    ? (Number.isFinite(spec?.xAxis?.min) && spec.xAxis.min < 0 ? spec.xAxis.min : -1)
+    : (spec?.xAxis?.min && spec.xAxis.min > 0 ? spec.xAxis.min : 0.1);
+  const maxVal = Number.isFinite(spec?.xAxis?.max) && spec.xAxis.max > minVal ? spec.xAxis.max : (isLinearScale ? 1 : 10);
   const logMin = Math.log10(minVal);
   const logMax = Math.log10(maxVal);
   const logDiff = logMax - logMin > 0 ? logMax - logMin : 1;
@@ -30,10 +45,11 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
   const plotWidth = Math.max(50, plotRight - plotLeft);
 
   const mapX = (val: number) => {
-    if (val == null || isNaN(val) || val <= 0) return plotLeft;
+    if (val == null || !Number.isFinite(val) || (!isLinearScale && val <= 0)) return plotLeft;
     const clamped = Math.max(minVal, Math.min(maxVal, val));
-    const logVal = Math.log10(clamped);
-    const frac = (logVal - logMin) / logDiff;
+    const frac = isLinearScale
+      ? (clamped - minVal) / (maxVal - minVal)
+      : (Math.log10(clamped) - logMin) / logDiff;
     return plotLeft + frac * plotWidth;
   };
 
@@ -42,8 +58,11 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
   const topHeaderY = 16;
   const contentStartY = 50;
   const rowHeight = 44;
-  const subgroupsList = Array.isArray(spec?.subgroups) ? spec.subgroups : [];
-  const axisY = contentStartY + subgroupsList.length * rowHeight + 20;
+  const subgroupsList = hasBindingIssues ? [] : (Array.isArray(spec?.subgroups) ? spec.subgroups : []);
+  const visibleRowCount = Math.max(1, Math.floor((height - contentStartY - 65) / rowHeight));
+  const visibleSubgroups = subgroupsList.slice(0, visibleRowCount);
+  const hiddenSubgroupCount = Math.max(0, subgroupsList.length - visibleSubgroups.length);
+  const axisY = contentStartY + visibleSubgroups.length * rowHeight + 20;
 
   return (
     <Group>
@@ -58,6 +77,20 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
         strokeWidth={1}
         cornerRadius={2}
       />
+
+      {hasBindingIssues && spec.showLabels && (
+        <Text
+          x={padding + 22}
+          y={contentStartY + 24}
+          width={width - padding * 2 - 30}
+          text={`Data unavailable: ${bindingMessage}`}
+          fontSize={11}
+          fontStyle="bold"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          fill={colors.mutedText}
+          wrap="word"
+        />
+      )}
 
       {/* Letter badge "C" */}
       {spec.showLabels && letter && (
@@ -101,7 +134,7 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
           <Text
             x={plotLeft + plotWidth / 2 - 50}
             y={topHeaderY + 24}
-            text="Odds Ratio (95% CI)"
+            text={isLinearScale ? 'Difference (95% CI)' : 'Odds Ratio (95% CI)'}
             fontSize={11.5}
             fontStyle="bold"
             fontFamily="system-ui, -apple-system, sans-serif"
@@ -131,12 +164,12 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
       )}
 
       {/* Subgroups */}
-      {subgroupsList.map((sg, idx) => {
+      {visibleSubgroups.map((sg, idx) => {
         const rowY = contentStartY + 30 + idx * rowHeight;
-        const eff = typeof sg?.effect === 'number' && !isNaN(sg.effect) ? sg.effect : 1.0;
-        const ciLower = typeof sg?.ciLower === 'number' && !isNaN(sg.ciLower) ? sg.ciLower : 0.5;
-        const ciUpper = typeof sg?.ciUpper === 'number' && !isNaN(sg.ciUpper) ? sg.ciUpper : 2.0;
-        const iSq = typeof sg?.iSquared === 'number' && !isNaN(sg.iSquared) ? sg.iSquared : 0;
+        const eff = sg.effect;
+        const ciLower = sg.ciLower;
+        const ciUpper = sg.ciUpper;
+        const iSq = sg.iSquared;
 
         const ptX = mapX(eff);
         const ciLeftX = mapX(ciLower);
@@ -196,7 +229,7 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
               <Text
                 x={width - 55}
                 y={rowY - 6}
-                text={`${iSq}%`}
+                text={Number.isFinite(iSq) ? `${iSq}%` : 'Not estimable'}
                 fontSize={11.5}
                 fontFamily="system-ui, -apple-system, sans-serif"
                 fill={colors.text}
@@ -205,6 +238,19 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
           </Group>
         );
       })}
+
+      {hiddenSubgroupCount > 0 && spec.showLabels && (
+        <Text
+          x={padding + 22}
+          y={contentStartY + visibleSubgroups.length * rowHeight - 4}
+          width={plotLeft - padding - 30}
+          text={`+${hiddenSubgroupCount} more subgroups (see Data)`}
+          fontSize={10.5}
+          fontStyle="italic"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          fill={colors.mutedText}
+        />
+      )}
 
       {/* X Axis & Ticks */}
       {spec.showAxes && (
@@ -215,7 +261,10 @@ export const SubgroupPlotKonva: React.FC<SubgroupPlotKonvaProps> = ({
             strokeWidth={1}
           />
 
-          {[0.1, 0.5, 1, 2, 5, 10].map((tickVal) => {
+          {(isLinearScale
+            ? Array.from({ length: 5 }, (_, index) => minVal + ((maxVal - minVal) * index) / 4)
+            : [0.1, 0.5, 1, 2, 5, 10]
+          ).map((tickVal) => {
             const tickX = mapX(tickVal);
             return (
               <Group key={tickVal}>

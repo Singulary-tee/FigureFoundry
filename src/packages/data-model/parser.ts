@@ -1,202 +1,175 @@
 import { DatasetField, DatasetProfile, StatisticalType } from '../../types';
 
-export function parseCSV(csvText: string): Record<string, any>[] {
-  const cleanText = csvText.trim();
+export const MAX_IMPORT_TEXT_LENGTH = 2 * 1024 * 1024;
+export const MAX_IMPORT_RECORDS = 5000;
+
+function assertSafeText(text: string, format: 'CSV' | 'JSON'): string {
+  const cleanText = text.replace(/^\uFEFF/, '').trim();
+  if (!cleanText) return '';
+  if (cleanText.length > MAX_IMPORT_TEXT_LENGTH) {
+    throw new Error(`File is too large. ${format} text exceeds the ${MAX_IMPORT_TEXT_LENGTH} character safety limit.`);
+  }
+  if (cleanText.includes('\x00')) {
+    throw new Error('Unsupported binary file format detected. Upload a UTF-8 plain-text CSV, TSV, or JSON file.');
+  }
+  return cleanText;
+}
+
+function detectDelimiter(text: string): string {
+  const firstLine = text.split(/\r?\n/, 1)[0] || '';
+  return [',', '\t', ';'].reduce((best, candidate) =>
+    firstLine.split(candidate).length > firstLine.split(best).length ? candidate : best
+  , ',');
+}
+
+function uniqueHeaders(headers: string[]): string[] {
+  const seen = new Map<string, number>();
+  return headers.map((header, index) => {
+    const base = header.trim() || `column_${index + 1}`;
+    const count = seen.get(base) || 0;
+    seen.set(base, count + 1);
+    return count === 0 ? base : `${base}_${count + 1}`;
+  });
+}
+
+function coerceCell(value: string): string | number | boolean | null {
+  const clean = value.trim();
+  if (!clean || /^(na|null|none)$/i.test(clean)) return null;
+  if (/^true$/i.test(clean)) return true;
+  if (/^false$/i.test(clean)) return false;
+  const numeric = Number(clean);
+  return Number.isFinite(numeric) ? numeric : clean;
+}
+
+/** Parse a quoted CSV, TSV, or semicolon-delimited table into typed records. */
+export function parseCSV(csvText: string): Record<string, unknown>[] {
+  const cleanText = assertSafeText(csvText, 'CSV');
   if (!cleanText) return [];
 
-  // Safety limits to prevent browser thread freeze on huge or malformed binary text
-  const MAX_CHAR_LIMIT = 2 * 1024 * 1024; // 2MB char limit
-  const MAX_ROWS_LIMIT = 5000; // Cap to 5000 rows for smooth local rendering
-
-  if (cleanText.length > MAX_CHAR_LIMIT) {
-    throw new Error(`File is too large. CSV text exceeds character safety limit of ${MAX_CHAR_LIMIT} characters.`);
-  }
-
-  // Quick binary/null-byte check
-  if (cleanText.includes('\x00')) {
-    throw new Error('Unsupported binary file format detected. Please upload a standard UTF-8 encoded plain-text CSV or JSON file.');
-  }
-
+  const delimiter = detectDelimiter(cleanText);
   const rows: string[][] = [];
   let currentRow: string[] = [];
   let currentField = '';
   let insideQuotes = false;
 
-  for (let i = 0; i < cleanText.length; i++) {
-    const char = cleanText[i];
-    const nextChar = cleanText[i + 1];
-
+  for (let index = 0; index < cleanText.length; index += 1) {
+    const char = cleanText[index];
+    const nextChar = cleanText[index + 1];
     if (char === '"') {
       if (insideQuotes && nextChar === '"') {
         currentField += '"';
-        i++; 
+        index += 1;
       } else {
         insideQuotes = !insideQuotes;
       }
-    } else if (char === ',' && !insideQuotes) {
-      currentRow.push(currentField.trim());
+    } else if (char === delimiter && !insideQuotes) {
+      currentRow.push(currentField);
       currentField = '';
     } else if ((char === '\r' || char === '\n') && !insideQuotes) {
-      if (char === '\r' && nextChar === '\n') {
-        i++; 
-      }
-      currentRow.push(currentField.trim());
-      if (currentRow.some(cell => cell.length > 0)) {
-        rows.push(currentRow);
-      }
+      if (char === '\r' && nextChar === '\n') index += 1;
+      currentRow.push(currentField);
+      if (currentRow.some((cell) => cell.trim().length > 0)) rows.push(currentRow);
       currentRow = [];
       currentField = '';
-
-      // Early break if rows limit reached to keep app fully interactive
-      if (rows.length >= MAX_ROWS_LIMIT) {
-        break;
+      if (rows.length > MAX_IMPORT_RECORDS + 1) {
+        throw new Error(`File contains more than ${MAX_IMPORT_RECORDS} data records. Reduce the file before importing so no rows are silently discarded.`);
       }
     } else {
       currentField += char;
     }
   }
 
+  if (insideQuotes) throw new Error('CSV contains an unterminated quoted value.');
   if (currentField.length > 0 || currentRow.length > 0) {
-    currentRow.push(currentField.trim());
-    if (currentRow.some(cell => cell.length > 0)) {
-      rows.push(currentRow);
+    currentRow.push(currentField);
+    if (currentRow.some((cell) => cell.trim().length > 0)) rows.push(currentRow);
+  }
+  if (rows.length < 2) throw new Error('CSV file must have a header row and at least one data row.');
+
+  const headers = uniqueHeaders(rows[0]);
+  return rows.slice(1).map((row) => {
+    const record: Record<string, unknown> = {};
+    headers.forEach((header, columnIndex) => { record[header] = coerceCell(row[columnIndex] || ''); });
+    return record;
+  });
+}
+
+function flattenRecord(value: Record<string, unknown>, prefix = '', output: Record<string, unknown> = {}): Record<string, unknown> {
+  Object.entries(value).forEach(([key, item]) => {
+    const fieldName = prefix ? `${prefix}.${key}` : key;
+    if (item === null || item === undefined || typeof item !== 'object' || item instanceof Date || Array.isArray(item)) {
+      output[fieldName] = Array.isArray(item) ? JSON.stringify(item) : item ?? null;
+    } else {
+      flattenRecord(item as Record<string, unknown>, fieldName, output);
+    }
+  });
+  return output;
+}
+
+function extractJsonRecords(parsed: unknown): unknown[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === 'object') {
+    const container = parsed as Record<string, unknown>;
+    for (const key of ['records', 'rows', 'data', 'items']) {
+      if (Array.isArray(container[key])) return container[key] as unknown[];
     }
   }
+  throw new Error('JSON data must be an array of record objects, or an object containing records, rows, data, or items.');
+}
 
-  if (rows.length < 2) {
-    throw new Error('CSV file must have a header row and at least one data row.');
+export function parseJSON(jsonText: string): Record<string, unknown>[] {
+  const cleanText = assertSafeText(jsonText, 'JSON');
+  if (!cleanText) return [];
+  const sourceRecords = extractJsonRecords(JSON.parse(cleanText));
+  if (sourceRecords.length > MAX_IMPORT_RECORDS) {
+    throw new Error(`File contains more than ${MAX_IMPORT_RECORDS} data records. Reduce the file before importing so no rows are silently discarded.`);
   }
-
-  const headers = rows[0].map((h, idx) => h.trim() || `col_${idx + 1}`);
-  const records: Record<string, any>[] = [];
-
-  for (let r = 1; r < Math.min(rows.length, MAX_ROWS_LIMIT); r++) {
-    const row = rows[r];
-    const record: Record<string, any> = {};
-
-    headers.forEach((header, colIdx) => {
-      const rawVal = row[colIdx] !== undefined ? row[colIdx].trim() : '';
-
-      if (rawVal === '' || rawVal.toLowerCase() === 'na' || rawVal.toLowerCase() === 'null' || rawVal.toLowerCase() === 'none') {
-        record[header] = null;
-      } else if (rawVal.toLowerCase() === 'true') {
-        record[header] = true;
-      } else if (rawVal.toLowerCase() === 'false') {
-        record[header] = false;
-      } else if (!isNaN(Number(rawVal)) && rawVal !== '') {
-        record[header] = Number(rawVal);
-      } else {
-        record[header] = rawVal;
-      }
-    });
-
-    records.push(record);
-  }
-
+  const records = sourceRecords
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+    .map((record) => flattenRecord(record));
+  if (records.length === 0) throw new Error('JSON contains no record objects to import.');
   return records;
 }
 
-export function parseJSON(jsonText: string): Record<string, any>[] {
-  const cleanText = jsonText.trim();
-  if (cleanText.includes('\x00')) {
-    throw new Error('Unsupported binary file format detected. Please upload a plain-text JSON file.');
-  }
-
-  const parsed = JSON.parse(jsonText);
-  if (!Array.isArray(parsed)) {
-    throw new Error('JSON data must be an array of record objects (e.g. [{ "a": 1, "b": "x" }, ...]).');
-  }
-  const filtered = parsed.filter(item => typeof item === 'object' && item !== null);
-  
-  const MAX_RECORDS_LIMIT = 5000;
-  if (filtered.length > MAX_RECORDS_LIMIT) {
-    return filtered.slice(0, MAX_RECORDS_LIMIT);
-  }
-  return filtered;
-}
-
-export function inferFieldType(values: any[]): StatisticalType {
-  const nonNulls = values.filter(v => v !== null && v !== undefined && v !== '');
+export function inferFieldType(values: unknown[]): StatisticalType {
+  const nonNulls = values.filter((value) => value !== null && value !== undefined && value !== '');
   if (nonNulls.length === 0) return 'categorical';
-
-  const dateRegex = /^\d{4}-\d{2}-\d{2}/;
-  if (nonNulls.every(v => typeof v === 'string' && (dateRegex.test(v) || !isNaN(Date.parse(v)) && isNaN(Number(v))))) {
-    return 'temporal';
-  }
-
-  if (nonNulls.every(v => typeof v === 'number' && !isNaN(v))) {
-    return 'quantitative';
-  }
-
+  if (nonNulls.every((value) => typeof value === 'number' && Number.isFinite(value))) return 'quantitative';
+  if (nonNulls.every((value) => typeof value === 'string' && !Number.isFinite(Number(value)) && !Number.isNaN(Date.parse(value)))) return 'temporal';
   return 'categorical';
 }
 
 export function buildDatasetProfile(
   datasetId: string,
   title: string,
-  records: Record<string, any>[],
-  description: string = 'User-imported dataset',
-  citation: string = 'Uploaded local scientific data'
+  records: Record<string, unknown>[],
+  description = 'User-imported dataset',
+  citation = 'Uploaded local data'
 ): DatasetProfile {
-  const rowCount = records.length;
-  if (rowCount === 0) {
-    return {
-      datasetId,
-      title,
-      description,
-      citation,
-      rowCount: 0,
-      fields: [],
-      records: []
-    };
-  }
+  if (records.length === 0) return { datasetId, title, description, citation, rowCount: 0, fields: [], records: [] };
 
-  const keySet = new Set<string>();
-  records.slice(0, 100).forEach(r => Object.keys(r).forEach(k => keySet.add(k)));
-  const fieldKeys = Array.from(keySet).slice(0, 16);
-
-  const fields: DatasetField[] = fieldKeys.map(key => {
-    const columnValues = records.map(r => r[key]);
-    const missingCount = columnValues.filter(v => v === null || v === undefined || v === '').length;
-    const nonNullValues = columnValues.filter(v => v !== null && v !== undefined && v !== '');
+  const fieldKeys = Array.from(new Set(records.flatMap((record) => Object.keys(record))));
+  const fields: DatasetField[] = fieldKeys.map((key) => {
+    const columnValues = records.map((record) => record[key]);
+    const nonNullValues = columnValues.filter((value) => value !== null && value !== undefined && value !== '');
     const type = inferFieldType(columnValues);
-
-    const uniqueSet = new Set(nonNullValues);
-    const cardinality = uniqueSet.size;
-    const uniqueArray = Array.from(uniqueSet);
-    const exampleValues = uniqueArray.slice(0, 5);
-
-    let min: number | undefined = undefined;
-    let max: number | undefined = undefined;
-
-    if (type === 'quantitative' && nonNullValues.length > 0) {
-      const numericVals = nonNullValues.map(v => Number(v)).filter(v => !isNaN(v));
-      if (numericVals.length > 0) {
-        min = Math.min(...numericVals);
-        max = Math.max(...numericVals);
-      }
-    }
-
+    const uniqueValues = Array.from(new Set(nonNullValues));
+    const numericValues = type === 'quantitative'
+      ? nonNullValues.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      : [];
     return {
       name: key,
       type,
       unit: null,
-      missingCount,
-      cardinality,
-      exampleValues,
-      min,
-      max,
-      uniqueValues: type === 'categorical' ? uniqueArray.slice(0, 12) : undefined
+      missingCount: columnValues.length - nonNullValues.length,
+      cardinality: uniqueValues.length,
+      exampleValues: uniqueValues.slice(0, 5).filter((value): value is string | number | boolean => ['string', 'number', 'boolean'].includes(typeof value)),
+      min: numericValues.length ? Math.min(...numericValues) : undefined,
+      max: numericValues.length ? Math.max(...numericValues) : undefined,
+      uniqueValues: type === 'categorical'
+        ? uniqueValues.slice(0, 50).filter((value): value is string | number | boolean => ['string', 'number', 'boolean'].includes(typeof value))
+        : undefined,
     };
   });
-
-  return {
-    datasetId,
-    title,
-    description,
-    citation,
-    rowCount,
-    fields,
-    records
-  };
+  return { datasetId, title, description, citation, rowCount: records.length, fields, records };
 }

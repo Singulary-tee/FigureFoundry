@@ -10,6 +10,14 @@ export type PanelKind =
   | 'text-caption'
   | 'single-chart';
 
+/** A panel-local source and field mapping. It intentionally does not follow the workspace selection. */
+export interface PanelDataBinding {
+  datasetId?: string;
+  fieldMapping?: Record<string, string>;
+  bindingIssues?: string[];
+  bindingWarnings?: string[];
+}
+
 export interface StudyRow {
   id: string;
   study: string;
@@ -27,8 +35,8 @@ export interface StudyRow {
 export interface FunnelPlotPoint {
   id: string;
   study: string;
-  effect: number; // log odds ratio
-  standardError: number; // SE (log OR)
+  effect: number; // Effect estimate; log-transformed by the renderer when requested.
+  standardError: number;
 }
 
 export interface SubgroupAnalysisItem {
@@ -49,7 +57,7 @@ export interface GroupedBarItem {
   controlVal: number; // %
 }
 
-export interface ForestPlotSpec {
+export interface ForestPlotSpec extends PanelDataBinding {
   kind: 'forest-plot';
   title: string;
   model: 'IV, Random Effects' | 'IV, Fixed Effect' | 'Mantel-Haenszel' | 'DerSimonian-Laird';
@@ -80,7 +88,7 @@ export interface ForestPlotSpec {
   favorsRightText?: string;
 }
 
-export interface FunnelPlotSpec {
+export interface FunnelPlotSpec extends PanelDataBinding {
   kind: 'funnel-plot';
   title: string;
   xAxis: {
@@ -104,7 +112,7 @@ export interface FunnelPlotSpec {
   showFunnelGuides: boolean;
 }
 
-export interface SubgroupSpec {
+export interface SubgroupSpec extends PanelDataBinding {
   kind: 'subgroup-analysis';
   title: string;
   subgroups: SubgroupAnalysisItem[];
@@ -124,7 +132,7 @@ export interface SubgroupSpec {
   favorsRightText?: string;
 }
 
-export interface GroupedBarSpec {
+export interface GroupedBarSpec extends PanelDataBinding {
   kind: 'grouped-bar';
   title: string;
   groups: GroupedBarItem[];
@@ -132,6 +140,7 @@ export interface GroupedBarSpec {
     title: string;
     min: number;
     max: number;
+    autoMax?: boolean;
   };
   legend: {
     treatmentLabel: string;
@@ -150,17 +159,17 @@ export interface TextCaptionSpec {
   fontSize: number;
 }
 
-export interface ScientificChartPanelSpec {
+export interface ScientificChartPanelSpec extends PanelDataBinding {
   kind: 'volcano-plot' | 'heatmap';
   title: string;
   spec: FigureSpec;
   significanceThreshold?: number;
+  significanceMetric?: 'p-value' | 'adjusted-p-value' | 'neg-log10-p';
 }
 
-export interface SingleChartSpec {
+export interface SingleChartSpec extends PanelDataBinding {
   kind: 'single-chart';
   spec: FigureSpec;
-  datasetId?: string;
   pendingProposal?: boolean;
 }
 
@@ -261,6 +270,7 @@ export interface MultiPanelFigure {
   canvasSize: {
     width: number;
     height: number;
+    dpi?: number;
   };
   activeThemeId: string;
   themes: CanvasTheme[];

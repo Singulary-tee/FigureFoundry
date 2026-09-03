@@ -19,7 +19,7 @@ export const SingleChartKonva: React.FC<SingleChartKonvaProps> = ({
   frame,
   letter,
   theme,
-  datasetId = 'palmer-penguins',
+  datasetId,
   isPendingApproval = false,
 }) => {
   const { width, height } = frame;
@@ -31,7 +31,12 @@ export const SingleChartKonva: React.FC<SingleChartKonvaProps> = ({
   useEffect(() => {
     let isCancelled = false;
     setRenderError(false);
+    setRenderedImage(null);
     try {
+      if (!spec.datasetId || !datasetId || (spec.bindingIssues && spec.bindingIssues.length > 0)) {
+        setRenderError(true);
+        return;
+      }
       const profile = profileDataset(datasetId);
       const vegaSpec = compileToVegaLiteSpec((spec?.spec || {}) as any, profile, false);
 
@@ -147,7 +152,9 @@ export const SingleChartKonva: React.FC<SingleChartKonvaProps> = ({
             x={16}
             y={Math.max(10, (height - 50) / 2 - 10)}
             width={width - 72}
-            text="Chart compilation error — invalid spec parameters"
+            text={!spec.datasetId || !datasetId || spec.bindingIssues?.length
+              ? `Data unavailable: ${spec.bindingIssues?.join(' ') || 'bind a dataset before rendering this chart.'}`
+              : 'Chart compilation error — invalid spec parameters'}
             fontSize={11}
             fontFamily="system-ui, -apple-system, sans-serif"
             fill="#991b1b"

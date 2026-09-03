@@ -1,23 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Settings,
-  Sliders,
-  Check,
-  RotateCcw,
-  Sparkles,
-  ArrowRight,
-  Monitor,
   FileCheck,
-  Shield,
-  Layers,
-  Info,
 } from 'lucide-react';
 import { MultiPanelFigure } from '../../types/multipanel';
 
 interface SettingsViewProps {
   figure: MultiPanelFigure;
-  onUpdateCanvasSize: (width: number, height: number) => void;
-  onNavigate: (view: 'figures' | 'dashboard' | 'data' | 'analyses' | 'notes' | 'settings' | 'help') => void;
+  onUpdateCanvasSettings: (settings: { width: number; height: number; dpi: number; background: string }) => void;
 }
 
 const JOURNAL_PRESETS = [
@@ -31,20 +20,37 @@ const JOURNAL_PRESETS = [
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   figure,
-  onUpdateCanvasSize,
-  onNavigate,
+  onUpdateCanvasSettings,
 }) => {
-  const [width, setWidth] = useState(figure.canvasSize.width);
-  const [height, setHeight] = useState(figure.canvasSize.height);
-  const [dpi, setDpi] = useState<number>(300);
-  const [applied, setApplied] = useState(false);
+  const [width, setWidth] = useState(String(figure.canvasSize.width));
+  const [height, setHeight] = useState(String(figure.canvasSize.height));
+  const [dpi, setDpi] = useState<number>(figure.canvasSize.dpi ?? 300);
 
-  const handleApplySize = (w: number, h: number) => {
-    setWidth(w);
-    setHeight(h);
-    onUpdateCanvasSize(w, h);
-    setApplied(true);
-    setTimeout(() => setApplied(false), 2500);
+  useEffect(() => {
+    setWidth(String(figure.canvasSize.width));
+    setHeight(String(figure.canvasSize.height));
+    setDpi(figure.canvasSize.dpi ?? 300);
+  }, [figure.id, figure.canvasSize.width, figure.canvasSize.height, figure.canvasSize.dpi]);
+
+  const persistSettings = (nextWidth: string, nextHeight: string, nextDpi = dpi) => {
+    const parsedWidth = Number(nextWidth);
+    const parsedHeight = Number(nextHeight);
+    if (!Number.isFinite(parsedWidth) || parsedWidth < 400 || parsedWidth > 4000) return;
+    if (!Number.isFinite(parsedHeight) || parsedHeight < 300 || parsedHeight > 4000) return;
+    onUpdateCanvasSettings({
+      width: parsedWidth,
+      height: parsedHeight,
+      dpi: nextDpi,
+      background: '#ffffff',
+    });
+  };
+
+  const handlePreset = (w: number, h: number) => {
+    const nextWidth = String(w);
+    const nextHeight = String(h);
+    setWidth(nextWidth);
+    setHeight(nextHeight);
+    persistSettings(nextWidth, nextHeight);
   };
 
   return (
@@ -62,22 +68,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               Canvas & Layout Settings
             </h1>
             <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-0.5 line-clamp-2">
-              Journal dimension standards, export resolution, and layout guidance
+              Journal dimension standards and export resolution
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {applied && (
-              <span className="text-xs font-semibold text-[#24b47e] flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" /> Dimensions Updated!
-              </span>
-            )}
-            <button
-              onClick={() => handleApplySize(width, height)}
-              className="px-4 py-2 bg-[#24b47e] hover:bg-[#1f9d6e] text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
-            >
-              <span>Save & Apply</span>
-            </button>
+            <span className="text-xs text-[#71717a] dark:text-[#a1a1aa]">Changes save automatically</span>
           </div>
         </div>
 
@@ -97,11 +93,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {JOURNAL_PRESETS.map((preset) => {
-              const isSelected = width === preset.width && height === preset.height;
+              const isSelected = Number(width) === preset.width && Number(height) === preset.height;
               return (
                 <button
                   key={preset.name}
-                  onClick={() => handleApplySize(preset.width, preset.height)}
+                  onClick={() => handlePreset(preset.width, preset.height)}
                   className={`p-3.5 rounded-lg border text-left transition-all cursor-pointer ${
                     isSelected
                       ? 'border-[#24b47e] bg-[#24b47e]/5 dark:bg-[#24b47e]/10'
@@ -136,7 +132,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="number"
                   value={width}
-                  onChange={(e) => setWidth(Number(e.target.value))}
+                  onChange={(e) => {
+                    setWidth(e.target.value);
+                    persistSettings(e.target.value, height);
+                  }}
                   step={10}
                   min={400}
                   max={4000}
@@ -151,7 +150,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <input
                   type="number"
                   value={height}
-                  onChange={(e) => setHeight(Number(e.target.value))}
+                  onChange={(e) => {
+                    setHeight(e.target.value);
+                    persistSettings(width, e.target.value);
+                  }}
                   step={10}
                   min={300}
                   max={4000}
@@ -172,7 +174,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </label>
               <select
                 value={dpi}
-                onChange={(e) => setDpi(Number(e.target.value))}
+                onChange={(e) => {
+                  const nextDpi = Number(e.target.value);
+                  setDpi(nextDpi);
+                  persistSettings(width, height, nextDpi);
+                }}
                 className="w-full px-3 py-2 bg-[#f8f9fa] dark:bg-[#121212] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-semibold outline-none cursor-pointer"
               >
                 <option value={72}>72 DPI (Standard Web Preview)</option>
@@ -184,33 +190,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        <div className="p-4 bg-[#24b47e]/5 dark:bg-[#24b47e]/10 border border-[#24b47e]/20 rounded-xl flex items-start gap-3">
-          <Layers className="w-4 h-4 text-[#168a5b] dark:text-[#52d69a] mt-0.5 shrink-0" />
-          <div>
-            <h2 className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5]">Layout assistance</h2>
-            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-1 leading-relaxed">
-              Panels snap to a 10 px grid when moved or resized. In the canvas toolbar, use <strong>Tidy layout</strong> to return every plot and caption to a balanced publication-ready grid.
-            </p>
-          </div>
-        </div>
-
-        {/* Section 3: WebMCP Protocol & Architectural Invariants */}
-        <div className="p-5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-xl shadow-xs space-y-3">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-[#24b47e]" />
-            <h2 className="text-sm font-bold text-[#0f172a] dark:text-[#f4f4f5]">
-              WebMCP Protocol & Agent Invariants
-            </h2>
-          </div>
-          <div className="text-xs text-[#71717a] space-y-2 leading-relaxed">
-            <p>
-              • <strong>Agent Scope:</strong> WebMCP tools are exposed progressively for the page you are viewing. On a figure page, the agent can propose changes to any panel type; applying any proposal always requires native human confirmation.
-            </p>
-            <p>
-              • <strong>Optimistic Concurrency Control (OCC):</strong> Revisions require matching base revision numbers to prevent race conditions during figure editing.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -4,12 +4,12 @@
  * Supports:
  * - Inverse Variance Fixed Effect
  * - DerSimonian-Laird Random Effects
- * - Mantel-Haenszel for binary events
+ * - Inverse-variance pooling for binary and continuous effect measures
  * - Cochran's Q heterogeneity test, degrees of freedom, and p-value
  * - Higgins & Thompson's I² inconsistency statistic
  * - Between-study variance τ² (tau-squared)
  * - Exact 95% Confidence Intervals & Normalized study weights (%)
- * - Funnel plot pseudo 95% / 99% confidence boundaries
+ * - Funnel plot study points relative to a pooled effect center
  * - 2x2 contingency table (Odds Ratio, Risk Ratio, Risk Difference) calculators
  */
 
@@ -193,7 +193,8 @@ function regularizedBeta(x: number, a: number, b: number): number {
 
 /** Two-sided p-value for a Student t statistic with the supplied degrees of freedom. */
 export function studentTwoSidedPValue(t: number, degreesOfFreedom: number): number {
-  if (!Number.isFinite(t) || degreesOfFreedom < 1) return 1;
+  if (t === Infinity || t === -Infinity) return 0;
+  if (!Number.isFinite(t) || degreesOfFreedom < 1) return Number.NaN;
   const x = degreesOfFreedom / (degreesOfFreedom + t * t);
   return Math.max(0, Math.min(1, regularizedBeta(x, degreesOfFreedom / 2, 0.5)));
 }
@@ -208,44 +209,79 @@ export function computeStandardError(
   isLogScale: boolean = true
 ): number {
   if (isLogScale) {
-    const safeEffect = Math.max(1e-5, effect);
-    const safeLower = Math.max(1e-5, ciLower);
-    const safeUpper = Math.max(1e-5, ciUpper);
+    if (!Number.isFinite(effect) || !Number.isFinite(ciLower) || !Number.isFinite(ciUpper) || effect <= 0 || ciLower <= 0 || ciUpper <= ciLower) {
+      return Number.NaN;
+    }
 
     // SE = (ln(Upper) - ln(Lower)) / (2 * 1.95996)
-    const se = (Math.log(safeUpper) - Math.log(safeLower)) / 3.919928;
-    return se > 0 ? se : 0.2;
+    return (Math.log(ciUpper) - Math.log(ciLower)) / 3.919928;
   } else {
+    if (!Number.isFinite(effect) || !Number.isFinite(ciLower) || !Number.isFinite(ciUpper) || ciUpper <= ciLower) {
+      return Number.NaN;
+    }
     const se = (ciUpper - ciLower) / 3.919928;
-    return se > 0 ? se : 0.2;
+    return se;
   }
 }
 
-/**
- * Computes Odds Ratio and SE from 2x2 contingency table
- */
+/** Compute a supported effect estimate from a 2x2 contingency table. */
 export function computeFromContingency(
   eventsTreatment: number,
   totalTreatment: number,
   eventsControl: number,
-  totalControl: number
-): { or: number; ciLower: number; ciUpper: number; se: number } {
-  // Add 0.5 Haldane-Anscombe continuity correction for zero-cells
-  const a = eventsTreatment === 0 || eventsControl === 0 ? eventsTreatment + 0.5 : eventsTreatment;
-  const b = eventsTreatment === 0 || eventsControl === 0 ? totalTreatment - eventsTreatment + 0.5 : totalTreatment - eventsTreatment;
-  const c = eventsTreatment === 0 || eventsControl === 0 ? eventsControl + 0.5 : eventsControl;
-  const d = eventsTreatment === 0 || eventsControl === 0 ? totalControl - eventsControl + 0.5 : totalControl - eventsControl;
+  totalControl: number,
+  effectMeasure: 'Odds Ratio (OR)' | 'Risk Ratio (RR)' | 'Risk Difference (RD)' = 'Odds Ratio (OR)',
+): { effect: number; or: number; ciLower: number; ciUpper: number; se: number } {
+  if (
+    ![eventsTreatment, totalTreatment, eventsControl, totalControl].every(Number.isFinite) ||
+    totalTreatment <= 0 || totalControl <= 0 ||
+    eventsTreatment < 0 || eventsTreatment > totalTreatment ||
+    eventsControl < 0 || eventsControl > totalControl
+  ) {
+    throw new Error('Contingency counts must be finite, non-negative, and no greater than their group totals.');
+  }
+  if (!['Odds Ratio (OR)', 'Risk Ratio (RR)', 'Risk Difference (RD)'].includes(effectMeasure)) {
+    throw new Error(`${effectMeasure} cannot be computed from a 2x2 contingency table.`);
+  }
 
-  const or = (a * d) / (b * c);
-  const se = Math.sqrt(1 / a + 1 / b + 1 / c + 1 / d);
-  const logOR = Math.log(or);
-  const ciLower = Math.exp(logOR - 1.96 * se);
-  const ciUpper = Math.exp(logOR + 1.96 * se);
+  // Apply a continuity correction to every cell only when a zero cell exists.
+  const needsCorrection = eventsTreatment === 0 || eventsTreatment === totalTreatment || eventsControl === 0 || eventsControl === totalControl;
+  const correction = needsCorrection ? 0.5 : 0;
+  const a = eventsTreatment + correction;
+  const b = totalTreatment - eventsTreatment + correction;
+  const c = eventsControl + correction;
+  const d = totalControl - eventsControl + correction;
+  const treatmentTotal = a + b;
+  const controlTotal = c + d;
+  const oddsRatio = (a * d) / (b * c);
+  const treatmentRisk = a / treatmentTotal;
+  const controlRisk = c / controlTotal;
 
+  if (effectMeasure === 'Risk Difference (RD)') {
+    const effect = treatmentRisk - controlRisk;
+    const se = Math.sqrt(
+      (treatmentRisk * (1 - treatmentRisk)) / treatmentTotal +
+      (controlRisk * (1 - controlRisk)) / controlTotal,
+    );
+    return {
+      effect: Number(effect.toFixed(4)),
+      or: Number(oddsRatio.toFixed(4)),
+      ciLower: Number((effect - 1.96 * se).toFixed(4)),
+      ciUpper: Number((effect + 1.96 * se).toFixed(4)),
+      se: Number(se.toFixed(4)),
+    };
+  }
+
+  const effect = effectMeasure === 'Risk Ratio (RR)' ? treatmentRisk / controlRisk : oddsRatio;
+  const se = effectMeasure === 'Risk Ratio (RR)'
+    ? Math.sqrt(1 / a - 1 / treatmentTotal + 1 / c - 1 / controlTotal)
+    : Math.sqrt(1 / a + 1 / b + 1 / c + 1 / d);
+  const logEffect = Math.log(effect);
   return {
-    or: Number(or.toFixed(4)),
-    ciLower: Number(ciLower.toFixed(4)),
-    ciUpper: Number(ciUpper.toFixed(4)),
+    effect: Number(effect.toFixed(4)),
+    or: Number(oddsRatio.toFixed(4)),
+    ciLower: Number(Math.exp(logEffect - 1.96 * se).toFixed(4)),
+    ciUpper: Number(Math.exp(logEffect + 1.96 * se).toFixed(4)),
     se: Number(se.toFixed(4)),
   };
 }
@@ -261,54 +297,65 @@ export function runMetaAnalysis(
   const isLogScale = !['Mean Difference (MD)', 'Risk Difference (RD)'].includes(effectMeasure);
   const isRandomEffects = model === 'IV, Random Effects' || model === 'DerSimonian-Laird';
 
-  const normalizedStudies = rawStudies.map((study) => {
+  if (model === 'Mantel-Haenszel') {
+    throw new Error('Mantel-Haenszel pooling is not available for this analysis path. Select an inverse-variance model.');
+  }
+
+  const normalizedStudies = rawStudies.flatMap((study) => {
     if (
       study.eventsTreatment !== undefined &&
       study.totalTreatment !== undefined &&
       study.eventsControl !== undefined &&
       study.totalControl !== undefined
     ) {
-      const computed = computeFromContingency(
-        study.eventsTreatment,
-        study.totalTreatment,
-        study.eventsControl,
-        study.totalControl
-      );
-      return { ...study, effect: computed.or, ciLower: computed.ciLower, ciUpper: computed.ciUpper };
+      try {
+        const computed = computeFromContingency(
+          study.eventsTreatment,
+          study.totalTreatment,
+          study.eventsControl,
+          study.totalControl,
+          effectMeasure as 'Odds Ratio (OR)' | 'Risk Ratio (RR)' | 'Risk Difference (RD)',
+        );
+        return [{ ...study, effect: computed.effect, ciLower: computed.ciLower, ciUpper: computed.ciUpper }];
+      } catch {
+        return [];
+      }
     }
-    return study;
+    return [study];
   });
   const validStudies = normalizedStudies.filter((s) =>
     Number.isFinite(s.effect) &&
     Number.isFinite(s.ciLower) &&
     Number.isFinite(s.ciUpper) &&
     s.ciUpper > s.ciLower &&
+    s.ciLower <= s.effect &&
+    s.effect <= s.ciUpper &&
     (isLogScale ? s.effect > 0 && s.ciLower > 0 && s.ciUpper > 0 : true)
   );
   const k = validStudies.length;
 
-  if (k === 0) {
+  if (k < 2) {
     return {
       model,
       effectMeasure,
-      k: 0,
+      k,
       studies: [],
       pooledEstimate: {
-        effect: isLogScale ? 1.0 : 0,
-        ciLower: isLogScale ? 1.0 : 0,
-        ciUpper: isLogScale ? 1.0 : 0,
+        effect: Number.NaN,
+        ciLower: Number.NaN,
+        ciUpper: Number.NaN,
         weightTotal: 0,
-        label: 'Total (95% CI)',
-        zScore: 0,
-        pValue: 1,
+        label: k === 0 ? 'Awaiting valid studies' : 'At least two valid studies required',
+        zScore: Number.NaN,
+        pValue: Number.NaN,
       },
       heterogeneity: {
-        qStatistic: 0,
+        qStatistic: Number.NaN,
         df: 0,
-        pValue: 1,
-        iSquared: 0,
-        tauSquared: 0,
-        tau: 0,
+        pValue: Number.NaN,
+        iSquared: Number.NaN,
+        tauSquared: Number.NaN,
+        tau: Number.NaN,
       },
     };
   }

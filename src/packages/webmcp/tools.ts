@@ -3,16 +3,33 @@ import { profileDataset } from '../data-model/profiler';
 
 export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
   {
+    name: 'inspect_dataset_catalog',
+    title: 'Inspect available datasets',
+    description: 'Lists every loaded dataset with its identifier, title, row count, and currently selected status. Use datasetId from this result to inspect or analyze any loaded dataset without changing the user’s selection.',
+    annotations: { readOnlyHint: true, untrustedContentHint: false },
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        selectedDatasetId: { type: ['string', 'null'] },
+        datasets: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['selectedDatasetId', 'datasets'],
+    },
+  },
+  {
     name: 'inspect_dataset_fields',
     title: 'Inspect dataset fields',
-    description: 'Returns the columns of the currently loaded dataset: name, type, unit, missing-value count, cardinality, and up to 5 example values per field. Read-only. Context budget <1.5 KB.',
+    description: 'Returns the columns of a loaded dataset: name, type, unit, missing-value count, cardinality, and up to 5 example values per field. Read-only.',
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: false
     },
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        datasetId: { type: 'string', description: 'Optional loaded dataset identifier. Defaults to the selected dataset.' },
+      },
       additionalProperties: false
     },
     outputSchema: {
@@ -22,7 +39,6 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         rowCount: { type: 'integer', minimum: 0 },
         fields: {
           type: 'array',
-          maxItems: 12,
           items: {
             type: 'object',
             properties: {
@@ -60,6 +76,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     outputSchema: {
       type: 'object',
       properties: {
+        activeFigureId: { type: ['string', 'null'], description: 'The figure that owns every panel and revision in this response.' },
         targetPanelIds: { type: 'array', items: { type: 'string' }, description: 'Panels in the active figure that can be targeted by a revision proposal. Always inspect this fresh after the user changes figures.' },
         layerOrder: { type: 'array', items: { type: 'string' }, description: 'Current panel arrangement order.' },
         selectedPanelId: { type: ['string', 'null'], description: 'The panel the user currently has selected, if any.' },
@@ -72,6 +89,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
               id: { type: 'string' },
               label: { type: 'string' },
               kind: { type: 'string' },
+              datasetId: { type: ['string', 'null'], description: 'Dataset bound to this panel, or the currently selected dataset when the panel has no explicit binding.' },
               title: { type: 'string' },
               frame: {
                 type: 'object',
@@ -86,7 +104,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
               agentEditable: { type: 'boolean' },
               spec: { type: 'object', additionalProperties: true },
             },
-            required: ['id', 'label', 'kind', 'title', 'frame', 'agentEditable', 'spec'],
+            required: ['id', 'label', 'kind', 'datasetId', 'title', 'frame', 'agentEditable', 'spec'],
             additionalProperties: false,
           },
         },
@@ -123,9 +141,43 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
         },
         provenanceEventCount: { type: 'integer', minimum: 0 }
       },
-      required: ['targetPanelIds', 'layerOrder', 'selectedPanelId', 'panels', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
+      required: ['activeFigureId', 'targetPanelIds', 'layerOrder', 'selectedPanelId', 'panels', 'datasetId', 'scientificQuestion', 'figureIntent', 'revision', 'currentSpec', 'lastValidation', 'provenanceEventCount'],
       additionalProperties: false
     }
+  },
+  {
+    name: 'analyze_dataset',
+    title: 'Run a dataset analysis',
+    description: 'Runs a deterministic analysis on any loaded dataset. Supported operations are descriptive statistics, categorical frequencies, Pearson correlation, linear regression (including temporal x fields), and Welch two-group comparison. Inspect fields first, then supply only the fields needed by the operation.',
+    annotations: { readOnlyHint: true, untrustedContentHint: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        datasetId: { type: 'string', description: 'Optional loaded dataset identifier. Defaults to the selected dataset.' },
+        operation: { type: 'string', enum: ['descriptive', 'frequency', 'correlation', 'linear-regression', 'group-comparison'] },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Numeric fields for descriptive statistics. Defaults to every numeric field.' },
+        field: { type: 'string', description: 'Field for frequency analysis.' },
+        xField: { type: 'string', description: 'Numeric or temporal predictor field for correlation or linear regression.' },
+        yField: { type: 'string', description: 'Numeric outcome field for correlation or linear regression.' },
+        valueField: { type: 'string', description: 'Numeric outcome field for group comparison.' },
+        groupField: { type: 'string', description: 'Categorical grouping field for group comparison.' },
+        group1Val: { type: 'string', description: 'Optional first group for group comparison.' },
+        group2Val: { type: 'string', description: 'Optional second group for group comparison.' },
+        maxCategories: { type: 'integer', minimum: 1, maximum: 100, description: 'Maximum returned categories for frequency analysis.' },
+      },
+      required: ['operation'],
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        datasetId: { type: 'string' },
+        operation: { type: 'string' },
+        fields: { type: 'array', items: { type: 'string' } },
+        result: { type: 'object' },
+      },
+      required: ['datasetId', 'operation', 'fields', 'result'],
+    },
   },
   {
     name: 'analyze_group_comparison',
@@ -138,6 +190,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        datasetId: { type: 'string', description: 'Optional loaded dataset identifier. Defaults to the selected dataset.' },
         valueField: { type: 'string', description: 'Numeric outcome field.' },
         groupField: { type: 'string', description: 'Categorical grouping field.' },
         group1Val: { type: 'string', description: 'Optional first group value.' },
@@ -173,6 +226,7 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        datasetId: { type: 'string', description: 'Optional loaded dataset identifier. Defaults to the selected dataset and binds a single-chart proposal to it.' },
         targetPanelId: {
           type: 'string',
           description: 'A panelId from the fresh targetPanelIds list returned by inspect_figure_workspace. Applying a proposal always requests native human confirmation.'
@@ -191,6 +245,8 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
           type: 'object',
           description: 'Optional complete panel specification for any supported scientific panel renderer.'
         },
+        title: { type: 'string', description: 'Optional figure title.' },
+        subtitle: { type: 'string', description: 'Optional figure subtitle.' },
         figureIntent: {
           type: 'string',
           enum: ['comparison', 'distribution', 'relationship', 'trend'],
@@ -240,6 +296,15 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
                 legendTitle: { type: 'string' }
               },
               required: ['field', 'type']
+            },
+            size: {
+              type: 'object',
+              properties: {
+                field: { type: 'string' },
+                type: { type: 'string', enum: ['quantitative', 'categorical', 'temporal', 'ordinal'] },
+                legendTitle: { type: 'string' }
+              },
+              required: ['field', 'type']
             }
           },
           required: ['x', 'y']
@@ -257,6 +322,34 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
           type: 'string',
           enum: ['sd', 'sem', 'ci95', 'none'],
           description: 'Optional uncertainty layer for a chart. Use ci95, sem, or sd when comparing groups.'
+        },
+        trendline: {
+          type: 'string',
+          enum: ['linear', 'polynomial', 'loess', 'none'],
+          description: 'Optional fitted trend overlay for relationship or trend charts.'
+        },
+        facetBy: {
+          type: 'object',
+          properties: {
+            field: { type: 'string' },
+            type: { type: 'string', enum: ['quantitative', 'categorical', 'temporal', 'ordinal'] }
+          },
+          required: ['field', 'type'],
+          additionalProperties: false,
+        },
+        filters: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              field: { type: 'string' },
+              operator: { type: 'string', enum: ['==', '!=', '>', '<', 'in'] },
+              value: {}
+            },
+            required: ['field', 'operator', 'value'],
+            additionalProperties: false,
+          },
+          description: 'Optional row filters evaluated before chart rendering.'
         },
         workspacePatch: {
           type: 'object',
@@ -349,38 +442,35 @@ export const BASE_WEBMCP_TOOLS: WebMcpToolDefinition[] = [
   }
 ];
 
-export function getDatasetAwareTools(datasetId: string, currentRevision?: number): WebMcpToolDefinition[] {
+export function getDatasetAwareTools(datasetId: string, currentRevision?: number, datasetIds: string[] = []): WebMcpToolDefinition[] {
   const profile = profileDataset(datasetId);
   const columnNames = profile.fields.map(f => f.name);
 
   return BASE_WEBMCP_TOOLS.map(tool => {
+    const toolCopy = JSON.parse(JSON.stringify(tool)) as WebMcpToolDefinition;
+    const bindFields = (schema: any, propertyName?: string) => {
+      if (!schema || typeof schema !== 'object') return;
+      if (propertyName && (propertyName === 'field' || propertyName === 'fields' || propertyName.endsWith('Field'))) {
+        if (schema.items) schema.items.enum = columnNames;
+        else schema.enum = columnNames;
+      }
+      if (propertyName === 'datasetId' && datasetIds.length) schema.enum = datasetIds;
+      Object.entries(schema.properties || {}).forEach(([name, child]) => bindFields(child, name));
+      if (schema.items) bindFields(schema.items);
+    };
+    bindFields(toolCopy.inputSchema);
     if (tool.name === 'propose_figure_revision') {
-      const toolCopy = JSON.parse(JSON.stringify(tool)) as WebMcpToolDefinition;
-      
-      if (toolCopy.inputSchema.properties?.encoding?.properties?.x?.properties?.field) {
-        toolCopy.inputSchema.properties.encoding.properties.x.properties.field.enum = columnNames;
-      }
-      if (toolCopy.inputSchema.properties?.encoding?.properties?.y?.properties?.field) {
-        toolCopy.inputSchema.properties.encoding.properties.y.properties.field.enum = columnNames;
-      }
-      if (toolCopy.inputSchema.properties?.encoding?.properties?.color?.properties?.field) {
-        toolCopy.inputSchema.properties.encoding.properties.color.properties.field.enum = columnNames;
-      }
-      if (toolCopy.inputSchema.properties?.encoding?.properties?.shape?.properties?.field) {
-        toolCopy.inputSchema.properties.encoding.properties.shape.properties.field.enum = columnNames;
-      }
       return toolCopy;
     }
 
     if (tool.name === 'apply_figure_revision' && typeof currentRevision === 'number') {
-      const toolCopy = JSON.parse(JSON.stringify(tool)) as WebMcpToolDefinition;
       if (toolCopy.inputSchema.properties?.basedOnRevision) {
         toolCopy.inputSchema.properties.basedOnRevision.description = `Must equal current project revision: ${currentRevision}`;
       }
       return toolCopy;
     }
 
-    return tool;
+    return toolCopy;
   });
 }
 
@@ -390,15 +480,6 @@ export function getPageAwareTools(page: string): WebMcpToolDefinition[] {
     definitions.push({
       name: 'inspect_figures', title: 'Inspect figures',
       description: 'Lists figures in the active project so the agent can help the user choose a canvas.',
-      annotations: { readOnlyHint: true, untrustedContentHint: false },
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-      outputSchema: { type: 'object' }
-    });
-  }
-  if (page === 'data') {
-    definitions.push({
-      name: 'inspect_dataset_catalog', title: 'Inspect dataset catalog',
-      description: 'Lists datasets currently available in the active project or workspace.',
       annotations: { readOnlyHint: true, untrustedContentHint: false },
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       outputSchema: { type: 'object' }

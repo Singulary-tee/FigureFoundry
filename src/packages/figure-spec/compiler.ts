@@ -352,14 +352,14 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
     if (ch.aggregate) {
       mapping.aggregate = ch.aggregate;
     }
+    if (ch.condition) {
+      mapping.condition = ch.condition;
+    }
     return mapping;
   };
 
   const xEnc = buildChannel(spec.encoding.x);
-  const yEnc = buildChannel(spec.encoding.y);
-  const colorEnc = buildChannel(spec.encoding.color);
-  const shapeEnc = buildChannel(spec.encoding.shape);
-  const sizeEnc = buildChannel(spec.encoding.size);
+  let yEnc = buildChannel(spec.encoding.y);
 
   // Disable stacking if aggregate is non-summative
   if (xEnc && xEnc.aggregate && !['sum', 'count'].includes(xEnc.aggregate)) {
@@ -384,6 +384,56 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
       });
     });
   }
+
+  let chartRecords = filteredRecords;
+  let volcanoYField = spec.encoding.y?.field;
+  if (spec.volcanoMetric && spec.encoding.y) {
+    volcanoYField = '__figurefoundry_neglog10p';
+    chartRecords = filteredRecords.flatMap((record) => {
+      const value = Number(record[spec.encoding.y.field]);
+      const negLog10P = spec.volcanoMetric === 'neg-log10-p' ? value : -Math.log10(value);
+      return Number.isFinite(negLog10P) ? [{ ...record, [volcanoYField as string]: negLog10P }] : [];
+    });
+    yEnc = { ...yEnc, field: volcanoYField, title: yEnc?.title || '-log10(p)' };
+  }
+  const colorChannel = spec.volcanoThreshold !== undefined && volcanoYField
+    ? {
+        ...(spec.encoding.color || { field: volcanoYField, type: 'quantitative' }),
+        condition: {
+          test: `datum[${JSON.stringify(volcanoYField)}] >= ${-Math.log10(spec.volcanoThreshold)}`,
+          value: '#dc2626',
+        },
+      }
+    : spec.encoding.color;
+  const colorEnc = buildChannel(colorChannel);
+  const shapeEnc = buildChannel(spec.encoding.shape);
+  const sizeEnc = buildChannel(spec.encoding.size);
+
+  const annotationRecord = (annotation: NonNullable<FigureSpec['statisticalAnnotations']>[number]) => {
+    if (!Number.isFinite(annotation.pValue)) return null;
+    const yValues = filteredRecords
+      .map((record) => Number(record[spec.encoding.y.field]))
+      .filter(Number.isFinite);
+    const yPos = Number.isFinite(annotation.yLevel)
+      ? annotation.yLevel
+      : yValues.length ? Math.max(...yValues) : Number.NaN;
+    if (!Number.isFinite(yPos)) return null;
+    if (spec.encoding.x.type === 'quantitative') {
+      const xPos = filteredRecords
+        .map((record) => Number(record[spec.encoding.x.field]))
+        .find(Number.isFinite);
+      return Number.isFinite(xPos) ? {
+        annText: `${annotation.group1} vs ${annotation.group2}: ${annotation.stars} (p=${annotation.pValue.toFixed(3)})`,
+        xPos,
+        yPos,
+      } : null;
+    }
+    return {
+      annText: `${annotation.group1} vs ${annotation.group2}: ${annotation.stars} (p=${annotation.pValue.toFixed(3)})`,
+      xPos: annotation.group1,
+      yPos,
+    };
+  };
 
   // Distribution with Raw Observation Points (Jitter Boxplot / Beeswarm)
   if (spec.figureIntent === 'distribution' && spec.showsRawObservations) {
@@ -440,11 +490,11 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
     }
 
     if (spec.statisticalAnnotations?.length) {
-      const numericValues = filteredRecords.map((record) => Number(record[spec.encoding.y.field])).filter(Number.isFinite);
-      const annotationY = numericValues.length ? Math.max(...numericValues) : 0;
       spec.statisticalAnnotations.forEach((ann) => {
+        const annotationData = annotationRecord(ann);
+        if (!annotationData) return;
         layers.push({
-          data: { values: [{ annText: `${ann.group1} vs ${ann.group2}: ${ann.stars} (p=${ann.pValue.toFixed(3)})`, xPos: spec.encoding.x.type === 'quantitative' ? Number(filteredRecords[0]?.[spec.encoding.x.field] || 0) : ann.group1, yPos: ann.yLevel ?? annotationY }] },
+          data: { values: [annotationData] },
           mark: { type: 'text', align: 'center', baseline: 'bottom', dy: -8, fontWeight: 'bold', fontSize: 11, color: '#dc2626' },
           encoding: {
             x: { field: 'xPos', type: toVegaType(spec.encoding.x.type) },
@@ -461,7 +511,7 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
         text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
         subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${summaryMarkType}`
       },
-      data: { values: filteredRecords },
+      data: { values: chartRecords },
       layer: layers,
       config: baseConfig,
       width: 'container',
@@ -552,18 +602,11 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
   // Statistical Annotation Text Layer (p-values, stars)
   if (spec.statisticalAnnotations && spec.statisticalAnnotations.length > 0) {
     spec.statisticalAnnotations.forEach(ann => {
+      const annotationData = annotationRecord(ann);
+      if (!annotationData) return;
       layers.push({
         data: {
-          values: [
-            {
-              annText: `${ann.group1} vs ${ann.group2}: ${ann.stars} (p=${ann.pValue.toFixed(3)})`,
-              xPos: spec.encoding.x.type === 'quantitative' ? Number(filteredRecords[0]?.[spec.encoding.x.field] || 0) : ann.group1,
-              yPos: ann.yLevel ?? (() => {
-                const values = filteredRecords.map((record) => Number(record[spec.encoding.y.field])).filter(Number.isFinite);
-                return values.length ? Math.max(...values) : 0;
-              })()
-            }
-          ]
+          values: [annotationData]
         },
         mark: {
           type: 'text',
@@ -598,7 +641,7 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
         text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
         subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${spec.mark}${spec.themePreset ? ' • Style: ' + spec.themePreset.toUpperCase() : ''}`
       },
-      data: { values: filteredRecords },
+      data: { values: chartRecords },
       facet: {
         column: {
           field: spec.facetBy.field,
@@ -617,7 +660,7 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
       text: spec.title + (isPreview ? ' [PREVIEW]' : ''),
       subtitle: spec.subtitle || `Intent: ${spec.figureIntent} • Mark: ${spec.mark}${spec.themePreset ? ' • Style: ' + spec.themePreset.toUpperCase() : ''}`
     },
-    data: { values: filteredRecords },
+    data: { values: chartRecords },
     layer: layers.length === 1 ? undefined : layers,
     mark: layers.length === 1 ? markConfig : undefined,
     encoding: layers.length === 1 ? mainEnc : undefined,

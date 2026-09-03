@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { Calculator, TrendingUp } from 'lucide-react';
 import { MultiPanelFigure, ForestPlotSpec } from '../../types/multipanel';
-import { runMetaAnalysis } from '../../packages/stats/metaAnalysis';
+import { runMetaAnalysis, studentTwoSidedPValue } from '../../packages/stats/metaAnalysis';
 import { profileDataset } from '../../packages/data-model/profiler';
+import { runPearsonCorrelation } from '../../packages/stats';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +21,7 @@ interface AnalysesModalProps {
   isOpen: boolean;
   onClose: () => void;
   figure: MultiPanelFigure;
+  selectedDatasetId?: string | null;
   onUpdatePanelSpec: (panelId: string, spec: any) => void;
 }
 
@@ -27,16 +29,22 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
   isOpen,
   onClose,
   figure,
+  selectedDatasetId,
 }) => {
   const [activeTab, setActiveTab] = useState<'meta' | 'bias' | 'correlations'>('meta');
-  const [selectedModel, setSelectedModel] = useState<'IV, Random Effects' | 'IV, Fixed Effect' | 'Mantel-Haenszel' | 'DerSimonian-Laird'>('IV, Random Effects');
+  const [selectedModel, setSelectedModel] = useState<'IV, Random Effects' | 'IV, Fixed Effect' | 'DerSimonian-Laird'>('IV, Random Effects');
 
   const forestPanel = figure.panels.find((p) => p.spec.kind === 'forest-plot');
 
   const metaResult = useMemo(() => {
     if (forestPanel && forestPanel.spec.kind === 'forest-plot') {
       const spec = forestPanel.spec as ForestPlotSpec;
-      return runMetaAnalysis(spec.studies, selectedModel, spec.effectMeasure as any);
+      if (!spec.datasetId || spec.bindingIssues?.length || spec.studies.length < 2) return null;
+      try {
+        return runMetaAnalysis(spec.studies, selectedModel, spec.effectMeasure as any);
+      } catch {
+        return null;
+      }
     }
     return null;
   }, [forestPanel, selectedModel]);
@@ -44,8 +52,11 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
   const biasStats = useMemo(() => {
     if (!metaResult || metaResult.studies.length < 3) return null;
     const n = metaResult.studies.length;
-    const effects = metaResult.studies.map((s) => Math.log(s.effect));
-    const ses = metaResult.studies.map((s) => (Math.log(s.ciUpper) - Math.log(s.ciLower)) / (2 * 1.96));
+    const isLogScale = !['Mean Difference (MD)', 'Risk Difference (RD)'].includes(metaResult.effectMeasure);
+    const effects = metaResult.studies.map((s) => isLogScale ? Math.log(s.effect) : s.effect);
+    const ses = metaResult.studies.map((s) => isLogScale
+      ? (Math.log(s.ciUpper) - Math.log(s.ciLower)) / (2 * 1.96)
+      : (s.ciUpper - s.ciLower) / (2 * 1.96));
     const precisions = ses.map((se) => 1 / Math.max(se, 0.001));
     const snds = effects.map((eff, i) => eff / Math.max(ses[i], 0.001));
 
@@ -58,9 +69,15 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
       num += (precisions[i] - meanPrec) * (snds[i] - meanSnd);
       den += (precisions[i] - meanPrec) ** 2;
     }
-    const slope = den === 0 ? 0 : num / den;
+    if (!(den > 0)) return null;
+    const slope = num / den;
     const intercept = meanSnd - slope * meanPrec;
-    const eggerPVal = Math.abs(intercept) > 1.96 ? 0.032 : 0.418;
+    const residuals = snds.map((snd, i) => snd - (intercept + slope * precisions[i]));
+    const residualVariance = residuals.reduce((sum, residual) => sum + residual ** 2, 0) / Math.max(1, n - 2);
+    const interceptSE = Math.sqrt(residualVariance * (1 / n + meanPrec ** 2 / den));
+    if (!(interceptSE > 0) || !Number.isFinite(interceptSE)) return null;
+    const tStatistic = intercept / interceptSE;
+    const eggerPVal = studentTwoSidedPValue(tStatistic, Math.max(1, n - 2));
 
     return {
       intercept: intercept.toFixed(3),
@@ -71,7 +88,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
     };
   }, [metaResult]);
 
-  const datasetProfile = profileDataset('palmer-penguins');
+  const datasetProfile = profileDataset(selectedDatasetId || '');
   const quantFields = datasetProfile.fields.filter((f) => f.type === 'quantitative');
 
   const correlationMatrix = useMemo(() => {
@@ -81,29 +98,9 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
 
     names.forEach((rowName) => {
       matrix[rowName] = {};
-      const rowVals = records.map((r) => Number(r[rowName])).filter((v) => !isNaN(v));
-      const rowMean = rowVals.reduce((a, b) => a + b, 0) / (rowVals.length || 1);
 
       names.forEach((colName) => {
-        if (rowName === colName) {
-          matrix[rowName][colName] = 1.0;
-          return;
-        }
-        const colVals = records.map((r) => Number(r[colName])).filter((v) => !isNaN(v));
-        const colMean = colVals.reduce((a, b) => a + b, 0) / (colVals.length || 1);
-
-        let num = 0;
-        let denA = 0;
-        let denB = 0;
-        const count = Math.min(rowVals.length, colVals.length);
-        for (let i = 0; i < count; i++) {
-          const diffA = rowVals[i] - rowMean;
-          const diffB = colVals[i] - colMean;
-          num += diffA * diffB;
-          denA += diffA ** 2;
-          denB += diffB ** 2;
-        }
-        matrix[rowName][colName] = denA === 0 || denB === 0 ? 0 : num / Math.sqrt(denA * denB);
+        matrix[rowName][colName] = runPearsonCorrelation(records, rowName, colName).r;
       });
     });
     return matrix;
@@ -140,7 +137,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground">Pooling Model Selection</span>
                 <div className="flex items-center gap-1.5">
-                  {(['IV, Random Effects', 'IV, Fixed Effect', 'Mantel-Haenszel'] as const).map((model) => (
+                  {(['IV, Random Effects', 'IV, Fixed Effect', 'DerSimonian-Laird'] as const).map((model) => (
                     <Button
                       key={model}
                       size="sm"
@@ -222,7 +219,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
                     <div className="pt-2 border-t text-muted-foreground text-[11px]">
                       {biasStats.hasBiasRisk
                         ? 'Evidence of small-study effects detected (potential publication bias, p < 0.05).'
-                        : 'No statistically significant asymmetry detected in funnel distribution (p > 0.05).'}
+                        : 'No evidence of asymmetry in this test; this is not evidence that reporting bias is absent.'}
                     </div>
                   </Card>
                 ) : (
@@ -233,7 +230,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
 
             <TabsContent value="correlations" className="space-y-4 m-0">
               <span className="text-xs font-semibold text-foreground block">
-                Pearson Correlation Matrix (Palmer Penguins Quantitative Variables)
+                Pearson Correlation Matrix ({datasetProfile.title})
               </span>
               <ScrollArea className="h-72 border rounded-xl">
                 <table className="w-full text-left text-[11px]">
@@ -254,8 +251,9 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
                           {row.name.replace(/_/g, ' ')}
                         </td>
                         {quantFields.map((col) => {
-                          const r = correlationMatrix[row.name]?.[col.name] ?? 0;
-                          const isHigh = Math.abs(r) >= 0.7 && r !== 1;
+                          const r = correlationMatrix[row.name]?.[col.name] ?? Number.NaN;
+                          const isAvailable = Number.isFinite(r);
+                          const isHigh = isAvailable && Math.abs(r) >= 0.7 && r !== 1;
                           return (
                             <td key={col.name} className="p-2 font-mono text-center">
                               <span
@@ -267,7 +265,7 @@ export const AnalysesModal: React.FC<AnalysesModalProps> = ({
                                     : 'text-foreground'
                                 }`}
                               >
-                                {r.toFixed(2)}
+                                {isAvailable ? r.toFixed(2) : 'Not estimable'}
                               </span>
                             </td>
                           );

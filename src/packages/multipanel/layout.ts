@@ -11,12 +11,16 @@ export function snapPanelFrame(
   canvasSize: MultiPanelFigure['canvasSize'],
   gridSize = CANVAS_GRID_SIZE,
 ): PanelFrame {
-  const width = Math.min(canvasSize.width, Math.max(120, snapToGrid(frame.width, gridSize)));
-  const height = Math.min(canvasSize.height, Math.max(80, snapToGrid(frame.height, gridSize)));
+  const safeWidth = Number.isFinite(frame.width) ? frame.width : Math.min(canvasSize.width, 320);
+  const safeHeight = Number.isFinite(frame.height) ? frame.height : Math.min(canvasSize.height, 220);
+  const safeX = Number.isFinite(frame.x) ? frame.x : 0;
+  const safeY = Number.isFinite(frame.y) ? frame.y : 0;
+  const width = Math.min(canvasSize.width, Math.max(120, snapToGrid(safeWidth, gridSize)));
+  const height = Math.min(canvasSize.height, Math.max(80, snapToGrid(safeHeight, gridSize)));
 
   return {
-    x: Math.max(0, Math.min(canvasSize.width - width, snapToGrid(frame.x, gridSize))),
-    y: Math.max(0, Math.min(canvasSize.height - height, snapToGrid(frame.y, gridSize))),
+    x: Math.max(0, Math.min(canvasSize.width - width, snapToGrid(safeX, gridSize))),
+    y: Math.max(0, Math.min(canvasSize.height - height, snapToGrid(safeY, gridSize))),
     width,
     height,
   };

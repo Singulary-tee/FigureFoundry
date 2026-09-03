@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from '../ui/dialog';
 import { Button } from '../ui/button';
+import { useDomainStore } from '../../packages/domain/store';
 
 interface NotesModalProps {
   isOpen: boolean;
@@ -17,15 +18,14 @@ interface NotesModalProps {
   figure: MultiPanelFigure;
 }
 
-const STORAGE_KEY = 'figurefoundry_research_notes';
-
 export const NotesModal: React.FC<NotesModalProps> = ({ isOpen, onClose, figure }) => {
   const [notes, setNotes] = useState<string>('');
   const [copied, setCopied] = useState(false);
+  const { state, dispatch } = useDomainStore();
 
   useEffect(() => {
     if (isOpen) {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_${figure.id}`);
+      const saved = state.notesByFigureId[figure.id]?.research;
       if (saved) {
         setNotes(saved);
       } else {
@@ -41,25 +41,22 @@ ${figure.panels
   .join('\n')}
 
 ## 2. Statistical Methodology
-- **Meta-Analytic Model**: Inverse Variance, Random Effects (DerSimonian-Laird).
-- **Heterogeneity Measures**: Cochran's Q test for homogeneity, I² inconsistency index, and between-study variance estimate tau-squared (τ²).
-- **Significance Threshold**: Two-sided alpha = 0.05.
+- Record the analysis method, transformations, assumptions, uncertainty estimates, and validation checks actually used.
 
 ## 3. Data Provenance & Ethics
-- Extracted and verified through deterministic validation checks.
-- All figures formatted compliant with Midway scientific visualization guidelines.
+- Record source datasets, preparation steps, and any privacy or ethical considerations.
 
 ## 4. Manuscript Caption Draft
-**Figure 1.** Multi-panel scientific visualization of study meta-analysis and comparative outcome rates. *(A)* Forest plot demonstrating individual study effect estimates with 95% confidence intervals and random-effects pooled diamond. *(B)* Funnel plot displaying effect precision versus standard error.
+Describe the figure using the panels and analysis actually present.
 `;
         setNotes(draft);
       }
     }
-  }, [isOpen, figure]);
+  }, [isOpen, figure, state.notesByFigureId]);
 
   const handleSave = (val: string) => {
     setNotes(val);
-    localStorage.setItem(`${STORAGE_KEY}_${figure.id}`, val);
+    dispatch({ type: 'SET_FIGURE_NOTES', payload: { figureId: figure.id, notes: { research: val } } });
   };
 
   const handleExportMarkdown = () => {
