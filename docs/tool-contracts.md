@@ -1,6 +1,8 @@
 # WebMCP Tool Contracts
 
-FigureFoundry implements four primary WebMCP tools tailored for LLM consumption, bounded context budgets, and deterministic verification.
+FigureFoundry exposes a progressively discovered WebMCP surface tailored for LLM consumption, bounded context budgets, and deterministic verification. Agents should call `tools/list` as the user moves through the workspace: capabilities are scoped to the active page and current figure context instead of being presented as a fixed global menu.
+
+The core scientific-authoring contracts below are available alongside page-aware context helpers such as `inspect_figures` (dashboard), `inspect_dataset_catalog` (data), and `inspect_selected_panel` (figure editor). Additional scoped tools may be introduced when they make an agent and human workflow more complete, safe, and understandable.
 
 ---
 

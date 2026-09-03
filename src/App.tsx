@@ -16,6 +16,7 @@ import {
 } from './types/multipanel';
 import { BUILT_IN_THEMES, NATURE_THEME } from './packages/multipanel/themes';
 import { DEFAULT_MULTIPANEL_FIGURE } from './packages/multipanel/defaultFigure';
+import { createTidyPanelLayout } from './packages/multipanel/layout';
 import {
   loadFigureFromStorage,
   saveFigureToStorage,
@@ -61,6 +62,7 @@ export default function App() {
   const [toolMode, setToolMode] = useState<CanvasToolMode>('select');
   const [zoom, setZoom] = useState<number>(0.85);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [layoutTransitionKey, setLayoutTransitionKey] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
 
   // History stack for Undo / Redo
@@ -589,6 +591,11 @@ export default function App() {
     }
   };
 
+  const handleTidyLayout = () => {
+    updateFigureWithHistory((prev) => createTidyPanelLayout(prev));
+    setLayoutTransitionKey((key) => key + 1);
+  };
+
   // Theme Management
   const handleSelectTheme = (themeId: string) => {
     setActiveThemeId(themeId);
@@ -685,15 +692,17 @@ export default function App() {
     }
   }, [figureState.spec]);
 
-  // Synchronize domainState.figure changes to local figure state (e.g. when switching figures or loading a new project)
+  // The domain store is authoritative for agent commits as well as figure switches.
   useEffect(() => {
     if (!domainState.figure && currentView !== 'dashboard' && currentView !== 'settings' && currentView !== 'help') {
       setCurrentView('dashboard');
     }
     
-    if (domainState.figure && domainState.figure.id !== figure?.id) {
+    if (domainState.figure && domainState.figure !== figure) {
       setFigure(domainState.figure as any);
-      setSelectedPanelId(domainState.figure.panels[0]?.id || null);
+      if (domainState.figure.id !== figure?.id) {
+        setSelectedPanelId(domainState.figure.panels[0]?.id || null);
+      }
     }
   }, [domainState.activeFigureId, domainState.figure, currentView]);
 
@@ -727,6 +736,7 @@ export default function App() {
         activeView: currentView,
         activeFigureId: domainState.activeFigureId,
         panelIds: figure?.panels.map((panel) => panel.id) || [],
+        panels: figure?.panels || [],
         selectedPanelId,
         selectedPanel: figure?.panels.find((panel) => panel.id === selectedPanelId) || null,
         datasets: domainState.datasets,
@@ -848,6 +858,7 @@ export default function App() {
                   onSelectToolMode={setToolMode}
                   onUploadImage={handleUploadImage}
                   onArrange={handleArrange}
+                  onTidyLayout={handleTidyLayout}
                 />
 
                 {/* Stage Canvas */}
@@ -879,6 +890,7 @@ export default function App() {
                     stageRef={stageRef}
                     datasetId={figureState.datasetId}
                     isPendingApproval={!!figureState.activePreview}
+                    layoutTransitionKey={layoutTransitionKey}
                   />
                 </div>
 

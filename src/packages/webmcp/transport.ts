@@ -12,7 +12,12 @@ export function setupPostMessageTransport(options: TransportHandlerOptions): () 
   }
 
   const handleMessage = async (event: MessageEvent) => {
-    
+    // This bridge is intended for same-origin development and embedded hosts.
+    // Browser-native WebMCP registration remains the production integration.
+    if (event.origin !== window.location.origin) {
+      return;
+    }
+
     const data = event.data;
     if (!data || typeof data !== 'object' || data.jsonrpc !== '2.0' || !data.id || !data.method) {
       return;
@@ -30,9 +35,9 @@ export function setupPostMessageTransport(options: TransportHandlerOptions): () 
 
       try {
         if (event.source && typeof (event.source as any).postMessage === 'function') {
-          (event.source as any).postMessage(response, '*');
+          (event.source as any).postMessage(response, event.origin);
         } else {
-          window.postMessage(response, '*');
+          window.postMessage(response, window.location.origin);
         }
       } catch (err) {
         console.error('WebMCP Transport: Failed to postMessage reply', err);
@@ -76,18 +81,20 @@ export function setupPostMessageTransport(options: TransportHandlerOptions): () 
             return;
           }
 
-          const executionResult = await options.executeTool(toolName, toolArgs, 'agent');
+          const execution = await options.executeTool(toolName, toolArgs, 'agent');
+          const isError = execution.log.status !== 'success';
 
           reply({
             result: {
               content: [
                 {
                   type: 'text',
-                  text: typeof executionResult === 'string' ? executionResult : JSON.stringify(executionResult)
+                  text: JSON.stringify(execution.result)
                 }
               ],
-              raw: executionResult,
-              isError: executionResult?.error || executionResult?.status?.startsWith('rejected') ? true : false
+              structuredContent: execution.result,
+              raw: execution.result,
+              isError,
             }
           });
           break;

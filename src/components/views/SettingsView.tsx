@@ -37,8 +37,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [width, setWidth] = useState(figure.canvasSize.width);
   const [height, setHeight] = useState(figure.canvasSize.height);
   const [dpi, setDpi] = useState<number>(300);
-  const [gridSnap, setGridSnap] = useState(true);
-  const [gridSize, setGridSize] = useState<number>(10);
   const [applied, setApplied] = useState(false);
 
   const handleApplySize = (w: number, h: number) => {
@@ -64,7 +62,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               Canvas & Layout Settings
             </h1>
             <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-0.5 line-clamp-2">
-              Journal dimension standards, export resolution, and layout snapping
+              Journal dimension standards, export resolution, and layout guidance
             </p>
           </div>
 
@@ -183,6 +181,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <option value={600}>600 DPI (High-Resolution Vector Graphics)</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-[#24b47e]/5 dark:bg-[#24b47e]/10 border border-[#24b47e]/20 rounded-xl flex items-start gap-3">
+          <Layers className="w-4 h-4 text-[#168a5b] dark:text-[#52d69a] mt-0.5 shrink-0" />
+          <div>
+            <h2 className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5]">Layout assistance</h2>
+            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa] mt-1 leading-relaxed">
+              Panels snap to a 10 px grid when moved or resized. In the canvas toolbar, use <strong>Tidy layout</strong> to return every plot and caption to a balanced publication-ready grid.
+            </p>
           </div>
         </div>
 
