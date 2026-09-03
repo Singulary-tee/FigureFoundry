@@ -439,6 +439,22 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
       });
     }
 
+    if (spec.statisticalAnnotations?.length) {
+      const numericValues = filteredRecords.map((record) => Number(record[spec.encoding.y.field])).filter(Number.isFinite);
+      const annotationY = numericValues.length ? Math.max(...numericValues) : 0;
+      spec.statisticalAnnotations.forEach((ann) => {
+        layers.push({
+          data: { values: [{ annText: `${ann.group1} vs ${ann.group2}: ${ann.stars} (p=${ann.pValue.toFixed(3)})`, xPos: spec.encoding.x.type === 'quantitative' ? Number(filteredRecords[0]?.[spec.encoding.x.field] || 0) : ann.group1, yPos: ann.yLevel ?? annotationY }] },
+          mark: { type: 'text', align: 'center', baseline: 'bottom', dy: -8, fontWeight: 'bold', fontSize: 11, color: '#dc2626' },
+          encoding: {
+            x: { field: 'xPos', type: toVegaType(spec.encoding.x.type) },
+            y: { field: 'yPos', type: 'quantitative' },
+            text: { field: 'annText', type: 'nominal' },
+          },
+        });
+      });
+    }
+
     return {
       $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
       title: {
@@ -541,8 +557,11 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
           values: [
             {
               annText: `${ann.group1} vs ${ann.group2}: ${ann.stars} (p=${ann.pValue.toFixed(3)})`,
-              xPos: spec.encoding.x.field,
-              yPos: ann.yLevel || 0
+              xPos: spec.encoding.x.type === 'quantitative' ? Number(filteredRecords[0]?.[spec.encoding.x.field] || 0) : ann.group1,
+              yPos: ann.yLevel ?? (() => {
+                const values = filteredRecords.map((record) => Number(record[spec.encoding.y.field])).filter(Number.isFinite);
+                return values.length ? Math.max(...values) : 0;
+              })()
             }
           ]
         },
@@ -556,6 +575,8 @@ export function compileToVegaLiteSpec(spec: FigureSpec, profile: DatasetProfile,
           color: '#dc2626'
         },
         encoding: {
+          x: { field: 'xPos', type: toVegaType(spec.encoding.x.type) },
+          y: { field: 'yPos', type: 'quantitative' },
           text: { field: 'annText', type: 'nominal' }
         }
       });

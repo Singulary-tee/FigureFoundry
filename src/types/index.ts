@@ -86,7 +86,7 @@ export interface ValidationReport {
 export interface FigurePreview {
   previewId: string;
   basedOnRevision: number;
-  proposedSpec: FigureSpec;
+  proposedSpec: FigureSpec | Record<string, any>;
   validation: ValidationReport;
   nextAction: string;
   createdAt: number;
@@ -94,6 +94,8 @@ export interface FigurePreview {
   actor: 'agent' | 'human';
   panelKind?: string;
   panelId?: string;
+  commandPayload?: Record<string, any>;
+  workspacePatch?: Record<string, any>;
 }
 
 export interface ProvenanceEvent {
@@ -105,10 +107,19 @@ export interface ProvenanceEvent {
   summary: string;
   previewId?: string;
   basedOnRevision: number;
-  specSnapshot: FigureSpec;
+  specSnapshot: FigureSpec | Record<string, any>;
   validationReport: ValidationReport;
   diffDescription?: string[];
   commandPayload?: Record<string, any>;
+  targetPanelId?: string;
+  targetPanelKind?: string;
+  workspaceSnapshot?: Array<{
+    panelId: string;
+    kind: string;
+    spec: Record<string, any>;
+    frame: { x: number; y: number; width: number; height: number };
+  }>;
+  workspaceLayerOrder?: string[];
 }
 
 export interface FigureState {

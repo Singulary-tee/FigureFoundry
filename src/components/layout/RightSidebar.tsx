@@ -507,7 +507,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Type</label>
                     <select
                       value={spec.kind}
-                      disabled={selectedPanel.isAgentEditable && isPendingApproval}
+                      disabled={isPendingApproval}
                       onChange={(e) => onConvertPanelKind(selectedPanel.id, e.target.value as PanelKind)}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none focus:border-[#24b47e]"
                     >
@@ -515,6 +515,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                       <option value="funnel-plot">Funnel Plot</option>
                       <option value="grouped-bar">Grouped Bar</option>
                       <option value="subgroup-analysis">Subgroup Analysis</option>
+                      <option value="volcano-plot">Volcano Plot</option>
+                      <option value="heatmap">Heatmap</option>
                       <option value="single-chart">Single Chart (Vega)</option>
                       <option value="text-caption">Text Caption</option>
                     </select>
@@ -533,7 +535,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                                 : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
                             }`}
                           >
-                            {isPendingApproval ? 'Awaiting agent proposal' : 'Agent-editable'}
+                            {isPendingApproval ? 'Awaiting proposal review' : 'WebMCP-addressable'}
                           </span>
                         </div>
                       </div>

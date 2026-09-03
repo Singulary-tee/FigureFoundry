@@ -59,7 +59,7 @@ export const ProvenanceDrawer: React.FC<ProvenanceDrawerProps> = ({
             </h2>
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Immutable append-only audit ledger with reproducible Vega-Lite snapshots and one-click replay.
+            Immutable append-only audit ledger with reproducible panel/workspace snapshots and one-click replay.
           </p>
         </div>
       </div>
@@ -100,6 +100,14 @@ export const ProvenanceDrawer: React.FC<ProvenanceDrawerProps> = ({
               <p className="text-xs font-medium text-[#18181b] dark:text-[#EDEDED] mb-1.5 leading-relaxed break-words">
                 {event.summary}
               </p>
+
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 my-2 rounded-md border border-border bg-background p-2.5 text-[10px] font-mono text-muted-foreground">
+                <span>Actor <strong className="text-foreground">{event.actor}</strong></span>
+                <span>Target <strong className="text-foreground">{event.commandPayload?.targetPanelId || 'workspace'}</strong></span>
+                <span>Based on <strong className="text-foreground">Rev {event.basedOnRevision}</strong></span>
+                <span>Validation <strong className={event.validationReport.valid ? 'text-emerald-600' : 'text-red-600'}>{event.validationReport.valid ? 'passed' : 'blocked'}</strong></span>
+                {event.previewId && <span className="col-span-2">Preview <strong className="text-foreground">{event.previewId}</strong></span>}
+              </div>
 
               {event.diffDescription && event.diffDescription.length > 0 && (
                 <div className="space-y-1.5 my-2 bg-background p-2.5 rounded-md border border-border text-xs font-mono text-muted-foreground">

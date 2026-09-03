@@ -30,7 +30,13 @@ export interface NativeWebMcpTool {
   inputSchema?: Record<string, any>;
   outputSchema?: Record<string, any>;
   annotations?: WebMcpToolAnnotations;
-  execute?: (params: Record<string, any>) => Promise<any> | any;
+  execute?: (params: Record<string, any>, agent?: WebMcpAgent) => Promise<any> | any;
+}
+
+export interface WebMcpAgent {
+  requestUserInteraction: <T>(
+    callback: () => Promise<T> | T
+  ) => Promise<T>;
 }
 
 export interface BrowserModelContext {
@@ -56,7 +62,7 @@ export interface WebMcpContextValue {
   executionState: WebMcpExecutionState;
   registerTool: (tool: WebMcpToolDefinition, executeFn?: (args: Record<string, any>) => Promise<any>) => void;
   unregisterTool: (name: string) => void;
-  executeTool: (name: string, inputArgs: Record<string, any>, actor?: 'agent' | 'human') => Promise<{ result: any; log: WebMcpCallLog }>;
+  executeTool: (name: string, inputArgs: Record<string, any>, actor?: 'agent' | 'human', agent?: WebMcpAgent) => Promise<{ result: any; log: WebMcpCallLog }>;
   clearLogs: () => void;
   isNativeSupported: boolean;
   currentState: FigureState;

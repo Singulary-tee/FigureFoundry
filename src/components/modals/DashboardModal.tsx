@@ -33,7 +33,6 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
   revision = 1,
 }) => {
   const totalPanels = figure.panels.length;
-  const agentPanel = figure.panels.find((p) => p.isAgentEditable || (p.spec as any).isAgentEditable);
   const totalStudies = figure.panels.reduce((sum, p) => {
     if (p.spec.kind === 'forest-plot') return sum + (p.spec.studies?.length || 0);
     if (p.spec.kind === 'funnel-plot') return sum + (p.spec.points?.length || 0);
@@ -106,9 +105,9 @@ export const DashboardModal: React.FC<DashboardModalProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Agent-Editable Panel:</span>
+                  <span className="text-muted-foreground">WebMCP Panel Surface:</span>
                   <span className="font-mono font-semibold text-primary">
-                    {agentPanel ? `Panel ${agentPanel.letter} (${agentPanel.id})` : 'None'}
+                    {figure.panels.map((panel) => panel.id).join(', ')}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useSyncExternalStore } from 'react';
-import { DomainState, INITIAL_DOMAIN_STATE, INITIAL_FIGURE_STATE } from './state';
+import { DomainState, INITIAL_DOMAIN_STATE } from './state';
 import { DomainCommand } from './commands';
 import { domainReducer } from './reducer';
 import { FigureProject, ExportBundle } from '../../types';
@@ -42,18 +42,23 @@ export type FigureStore = any;
 let cachedSnapshot: any = null;
 let lastDomainState: DomainState | null = null;
 
-// Backwards compatibility alias for globalFigureStore
 export const globalFigureStore = {
   getState: () => {
     const s = globalDomainStore.getState();
     if (s !== lastDomainState || !cachedSnapshot) {
       lastDomainState = s;
+      const currentPanel = s.figure?.panels?.[0];
       cachedSnapshot = {
-        ...INITIAL_FIGURE_STATE,
         datasetId: s.selectedDatasetId,
         currentRevision: s.provenance.events.length + 1,
+        spec: currentPanel?.spec?.kind === 'single-chart' ? currentPanel.spec.spec : null,
         provenanceLedger: s.provenance.events,
         activePreview: s.activePreview,
+        panels: s.figure?.panels || [],
+        layers: s.figure?.layers || [],
+        figures: s.figures || [],
+        activeFigureId: s.activeFigureId || null,
+        datasets: s.datasets || [],
       };
     }
     return cachedSnapshot;
@@ -63,12 +68,16 @@ export const globalFigureStore = {
       globalDomainStore.dispatch({
         type: 'APPLY_PROPOSAL',
         payload: {
-          panelId: action.payload?.panelId || 'panel-d',
+          panelId: action.payload?.panelId || globalDomainStore.getState().figure?.panels?.[0]?.id,
           spec: action.payload?.spec || action.payload,
           commitMessage: action.payload?.commitMessage || 'Applied WebMCP agent action',
+          workspacePatch: action.payload?.workspacePatch,
+          provenance: action.payload?.provenance,
         },
       });
     } else if (action.type === 'SET_PREVIEW' || action.type === 'CLEAR_PREVIEW') {
+      globalDomainStore.dispatch(action as any);
+    } else if (action.type === 'RESTORE_SNAPSHOT') {
       globalDomainStore.dispatch(action as any);
     }
   },

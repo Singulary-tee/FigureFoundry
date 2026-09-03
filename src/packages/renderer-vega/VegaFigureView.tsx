@@ -128,7 +128,7 @@ export const VegaFigureView: React.FC<VegaFigureViewProps> = ({
   useEffect(() => {
     if (!isDiffMode || !activePreview || !previewContainerRef.current) return;
 
-    const previewSpecWithTheme = { ...activePreview.proposedSpec, theme };
+    const previewSpecWithTheme = { ...(activePreview.proposedSpec as FigureSpec), theme };
     const previewVlSpec = compileToVegaLiteSpec(previewSpecWithTheme, profile, true);
 
     let isMounted = true;

@@ -1,8 +1,8 @@
 import { chromium } from 'playwright';
 
-// End-to-end WebMCP agent simulation via the app's postMessage JSON-RPC transport.
-// Verifies all four tools + the browser-native confirmation gate (accept AND decline)
-// + the single-target security invariant (wrong target / unknown preview rejected).
+// External browser-agent transport harness via the app's postMessage JSON-RPC transport.
+// Verifies the browser-native confirmation gate (accept AND decline) and the
+// preview-to-panel binding (wrong target / unknown preview rejected).
 
 const BASE = process.env.BASE_URL || 'http://localhost:3100';
 
@@ -47,8 +47,17 @@ const run = async () => {
   console.log('2. Read-only inspection');
   const fields = unwrap(await rpc('tools/call', { name: 'inspect_dataset_fields', arguments: {} }));
   console.log('   fields:', fields?.rowCount, 'rows |', fields?.fields?.map((f) => f.name).join(', '));
-  const ws = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
+  let ws = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
   console.log('   workspace: targets=%s dataset=%s rev=%d intent=%s', ws?.targetPanelIds?.join(','), ws?.datasetId, ws?.revision, ws?.figureIntent);
+
+  const analysis = unwrap(await rpc('tools/call', {
+    name: 'analyze_group_comparison',
+    arguments: { valueField: 'body_mass_g', groupField: 'species', group1Val: 'Adelie', group2Val: 'Chinstrap' },
+  }));
+  if (!analysis?.effect || !analysis?.test || analysis?.groups?.length !== 2) {
+    throw new Error('Group analysis did not return effect, uncertainty, test, and both group summaries');
+  }
+  console.log('   analysis: %s estimate=%s CI=[%s,%s] p=%s', analysis.method, analysis.effect.estimate, analysis.effect.ci95Lower, analysis.effect.ci95Upper, analysis.test.pValue);
 
   const editable = ws?.targetPanelIds?.[0];
   if (!editable) throw new Error('inspect_figure_workspace returned no target panels');
@@ -88,7 +97,9 @@ const run = async () => {
 
   console.log(LINE);
   console.log('4. Native confirmation gate — DECLINE');
-  await page.evaluate(() => { window.requestUserInteraction = () => Promise.resolve({ confirmed: false }); });
+  // This hook is consumed only by the DEV-only test path; production native
+  // WebMCP approval comes from the execution context's agent callback.
+  await page.evaluate(() => { window.__FIGURE_FOUNDRY_TEST_CONFIRMATION__ = () => Promise.resolve(false); });
   const pDecline = await propose();
   const aDecline = await apply(pDecline?.previewId, pDecline?.basedOnRevision);
   if (aDecline?.status !== 'rejected_unapproved') {
@@ -99,7 +110,7 @@ const run = async () => {
 
   console.log(LINE);
   console.log('5. Native confirmation gate — ACCEPT');
-  await page.evaluate(() => { window.requestUserInteraction = () => Promise.resolve({ confirmed: true }); });
+  await page.evaluate(() => { window.__FIGURE_FOUNDRY_TEST_CONFIRMATION__ = () => Promise.resolve(true); });
   const pAccept = await propose();
   const aAccept = await apply(pAccept?.previewId, pAccept?.basedOnRevision);
   if (aAccept?.status !== 'applied') {
@@ -107,23 +118,79 @@ const run = async () => {
   }
   console.log('   propose:', JSON.stringify({ previewId: pAccept?.previewId, valid: pAccept?.validation?.valid, blockedIssues: pAccept?.validation?.issues?.filter((i) => i.severity === 'blocking').length }));
   console.log('   apply (accepted):', JSON.stringify({ status: aAccept?.status, newRev: aAccept?.newRevision, title: aAccept?.appliedSpec?.title }));
+  const wsAfterAccept = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
+  console.log('   inspect after accept:', JSON.stringify({ panel: wsAfterAccept.panels.find((panel) => panel.id === editable), revision: wsAfterAccept.revision }));
+  const acceptedPanelState = Object.fromEntries(wsAfterAccept.panels.map((panel) => [panel.id, panel]));
+  const acceptedLayerOrder = [...wsAfterAccept.layerOrder];
 
   console.log(LINE);
   console.log('6. Preview target binding');
+  ws = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
   const pWrong = await propose();
   const aWrong = await apply(pWrong?.previewId, pWrong?.basedOnRevision, editable === 'panel-a' ? 'panel-b' : 'panel-a');
   if (aWrong?.status !== 'rejected_wrong_target') {
     throw new Error(`Expected wrong target to reject, received ${aWrong?.status}`);
   }
   console.log('   apply to wrong panel:', JSON.stringify(aWrong?.status));
-  const aUnknown = await apply('prev_does_not_exist', 1);
+  const aUnknown = await apply('prev_does_not_exist', ws?.revision);
   console.log('   apply unknown preview:', JSON.stringify(aUnknown?.status));
 
   console.log(LINE);
-  console.log('7. Editor screenshot after applied revision');
+  console.log('7. Non-chart panel and atomic arrangement');
+  ws = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
+  const captionTarget = ws?.targetPanelIds?.includes('panel-caption') ? 'panel-caption' : ws?.targetPanelIds?.at(-1);
+  const frameTarget = ws?.targetPanelIds?.find((id) => id !== captionTarget);
+  const pStructure = unwrap(await rpc('tools/call', {
+    name: 'propose_figure_revision',
+    arguments: {
+      targetPanelId: captionTarget,
+      basedOnRevision: ws.revision,
+      panelKind: 'text-caption',
+      panelSpec: { kind: 'text-caption', title: 'Analysis notes', captionText: 'Effect size shown with a 95% confidence interval; raw observations remain available in the distribution panel.' },
+      workspacePatch: { panelChanges: [{ panelId: frameTarget, frame: { x: 640, y: 40, width: 520, height: 300 } }], layerOrder: [...ws.targetPanelIds].reverse() },
+    },
+  }));
+  if (!pStructure?.validation?.valid) throw new Error(`Structural proposal failed: ${JSON.stringify(pStructure?.validation)}`);
+  const aStructure = await apply(pStructure.previewId, pStructure.basedOnRevision, captionTarget);
+  if (aStructure?.status !== 'applied') throw new Error(`Structural proposal was not applied: ${aStructure?.status}`);
+  const wsAfterStructure = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
+  const caption = wsAfterStructure.panels.find((panel) => panel.id === captionTarget);
+  const frameChanged = wsAfterStructure.panels.find((panel) => panel.id === frameTarget);
+  const untouchedPanels = wsAfterStructure.panels.filter((panel) => panel.id !== captionTarget && panel.id !== frameTarget);
+  console.log('   inspect after:', JSON.stringify({ caption, order: wsAfterStructure.layerOrder, expectedFirst: ws.targetPanelIds.at(-1) }));
+  if (
+    caption?.kind !== 'text-caption' ||
+    JSON.stringify(frameChanged?.frame) !== JSON.stringify({ x: 640, y: 40, width: 520, height: 300 }) ||
+    wsAfterStructure.layerOrder.join('|') !== [...ws.targetPanelIds].reverse().join('|') ||
+    untouchedPanels.some((panel) => JSON.stringify(panel) !== JSON.stringify(acceptedPanelState[panel.id]))
+  ) {
+    throw new Error('Structural apply did not preserve panel kinds, requested frame/order, or unrelated panel state');
+  }
+  console.log('   applied:', JSON.stringify({ kind: caption.kind, order: wsAfterStructure.layerOrder, revision: wsAfterStructure.revision }));
+
+  console.log(LINE);
+  console.log('8. Provenance restore');
   await page.getByRole('button', { name: /Launch Editor|Open Figure Editor/i }).first().click({ timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(1800);
-  await page.screenshot({ path: '/tmp/shots/08-after-apply.png' });
+  await page.getByRole('button', { name: 'History' }).click();
+  await page.getByRole('button', { name: 'Restore' }).last().click();
+  await page.waitForTimeout(300);
+  const wsAfterRestore = unwrap(await rpc('tools/call', { name: 'inspect_figure_workspace', arguments: {} }));
+  console.log('   inspect restored:', JSON.stringify({ revision: wsAfterRestore.revision, panelAKind: wsAfterRestore.panels.find((panel) => panel.id === 'panel-a')?.kind, order: wsAfterRestore.layerOrder }));
+  const restoredPanelState = Object.fromEntries(wsAfterRestore.panels.map((panel) => [panel.id, panel]));
+  if (
+    wsAfterRestore.revision !== 4 ||
+    wsAfterRestore.layerOrder.join('|') !== acceptedLayerOrder.join('|') ||
+    Object.keys(acceptedPanelState).some((panelId) => JSON.stringify(restoredPanelState[panelId]) !== JSON.stringify(acceptedPanelState[panelId]))
+  ) {
+    throw new Error('Provenance restore did not replay the complete historical panel, frame, and layer-order snapshot');
+  }
+  console.log('   restored:', JSON.stringify({ revision: wsAfterRestore.revision, panels: wsAfterRestore.panels.length, order: wsAfterRestore.layerOrder }));
+  const historyText = await page.locator('body').innerText();
+  if (!historyText.includes('Target') || !historyText.includes('Based on') || !historyText.includes('Validation')) {
+    throw new Error('Expected provenance drawer to expose target, base revision, and validation metadata');
+  }
+  await page.screenshot({ path: 'artifacts/e2e-after-apply.png' });
 
   await browser.close();
   if (errors.length) { console.log('PAGE ERRORS:'); errors.forEach((e) => console.log(' -', e.slice(0, 200))); }

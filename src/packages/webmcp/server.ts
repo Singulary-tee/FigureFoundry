@@ -5,6 +5,8 @@ import { FigureDomainAction, ApplyResult } from '../domain/reducer';
 import { globalFigureStore, FigureStore } from '../domain/store';
 import { proposeFigureRevision, applyFigureRevision } from '../domain/commands';
 import { BASE_WEBMCP_TOOLS, getDatasetAwareTools } from './tools';
+import { WebMcpAgent } from './types';
+import { runTwoGroupTtest } from '../stats';
 
 export { BASE_WEBMCP_TOOLS as WEBMCP_TOOLS, getDatasetAwareTools };
 
@@ -37,7 +39,8 @@ export class WebMcpServer {
   public async executeTool(
     toolName: string,
     inputArgs: Record<string, any>,
-    actor: 'agent' | 'human' = 'agent'
+    actor: 'agent' | 'human' = 'agent',
+    interactionAgent?: WebMcpAgent
   ): Promise<{ result: any; log: WebMcpCallLog }> {
     const startTime = performance.now();
     const currentState = this.getState();
@@ -73,6 +76,45 @@ export class WebMcpServer {
           break;
         }
 
+        case 'analyze_group_comparison': {
+          const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
+          const { valueField, groupField, group1Val, group2Val } = inputArgs;
+          const valueMeta = profile.fields.find((field) => field.name === valueField);
+          const groupMeta = profile.fields.find((field) => field.name === groupField);
+          if (!valueMeta || valueMeta.type === 'categorical' || !groupMeta || groupMeta.type !== 'categorical') {
+            throw new Error(`Expected a numeric valueField and categorical groupField. Available fields: ${profile.fields.map((field) => field.name).join(', ')}`);
+          }
+          const analysis = runTwoGroupTtest(profile.records, valueField, groupField, group1Val, group2Val);
+          const [first, second] = analysis.groupStats;
+          const difference = first.mean - second.mean;
+          const standardError = Math.sqrt(first.sem ** 2 + second.sem ** 2);
+          const ciMargin = 1.96 * standardError;
+          const pooledStandardDeviation = Math.sqrt(((Math.max(0, first.count - 1) * first.stdDev ** 2) + (Math.max(0, second.count - 1) * second.stdDev ** 2)) / Math.max(1, first.count + second.count - 2));
+          result = {
+            datasetId: profile.datasetId,
+            method: analysis.testName,
+            valueField,
+            groupField,
+            groups: analysis.groupStats.map(({ values, ...group }) => group),
+            effect: {
+              measure: 'mean difference',
+              estimate: Number(difference.toFixed(4)),
+              ci95Lower: Number((difference - ciMargin).toFixed(4)),
+              ci95Upper: Number((difference + ciMargin).toFixed(4)),
+              cohensD: Number((pooledStandardDeviation > 0 ? difference / pooledStandardDeviation : 0).toFixed(4)),
+              direction: difference === 0 ? 'no difference' : difference > 0 ? `${first.groupName} > ${second.groupName}` : `${first.groupName} < ${second.groupName}`,
+            },
+            test: {
+              statistic: analysis.statisticValue,
+              degreesOfFreedom: analysis.degreesOfFreedom,
+              pValue: analysis.pValue,
+              significanceStars: analysis.significanceStars,
+            },
+            interpretation: analysis.summary,
+          };
+          break;
+        }
+
         case 'inspect_figure_workspace': {
           const profile = profileDataset(currentState.datasetId || 'palmer-penguins');
           const lastValidation = currentState.spec ? validateFigureSpec(currentState.spec, profile) : null;
@@ -89,12 +131,16 @@ export class WebMcpServer {
 
           result = {
             targetPanelIds,
+            layerOrder: [...((currentState as any).layers || [])].sort((a, b) => a.order - b.order).map((layer: any) => layer.panelId),
             selectedPanelId: (currentState as any).selectedPanelId || null,
             panels: ((currentState as any).panels || []).map((panel: any) => ({
               id: panel.id,
               label: panel.label,
               kind: panel.spec?.kind,
               title: panel.spec?.kind === 'single-chart' ? panel.spec.spec?.title : panel.spec?.title,
+              frame: panel.frame,
+              agentEditable: targetPanelIds.includes(panel.id),
+              spec: panel.spec,
             })),
             datasetId: currentState.datasetId || 'palmer-penguins',
             scientificQuestion,
@@ -117,6 +163,22 @@ export class WebMcpServer {
         }
 
         case 'propose_figure_revision': {
+          if (
+            typeof inputArgs.basedOnRevision === 'number' &&
+            inputArgs.basedOnRevision !== currentState.currentRevision
+          ) {
+            status = 'rejected';
+            result = {
+              valid: false,
+              issues: [{
+                severity: 'blocking',
+                path: 'basedOnRevision',
+                message: `Project revision is Rev ${currentState.currentRevision}; re-inspect the workspace and propose against the latest revision.`,
+              }],
+            };
+            break;
+          }
+
           if (!inputArgs.targetPanelId || !targetPanelIds.includes(inputArgs.targetPanelId)) {
             status = 'rejected';
             result = {
@@ -132,23 +194,66 @@ export class WebMcpServer {
             break;
           }
 
-          const candidateSpec = inputArgs.panelSpec || {
-            ...currentState.spec,
-            title:
-              inputArgs.title ||
-              `${inputArgs.figureIntent?.toUpperCase() || 'FIGURE'}: ${inputArgs.encoding?.y?.field || 'Y'} vs ${inputArgs.encoding?.x?.field || 'X'}`,
-            subtitle: `Analytical mark: ${inputArgs.mark} | Intent: ${inputArgs.figureIntent}`,
-            figureIntent: inputArgs.figureIntent,
-            mark: inputArgs.mark,
-            encoding: inputArgs.encoding,
-            showsRawObservations: Boolean(inputArgs.showsRawObservations),
-            uncertaintyEncoding: inputArgs.uncertaintyEncoding || 'none',
-          };
+          const targetPanel = ((currentState as any).panels || []).find((panel: any) => panel.id === inputArgs.targetPanelId);
+          const requestedKind = inputArgs.panelKind || inputArgs.panelSpec?.kind || (inputArgs.encoding ? 'single-chart' : targetPanel?.spec?.kind || 'single-chart');
+          const existingSpec = targetPanel?.spec?.kind === 'single-chart' ? targetPanel.spec.spec : targetPanel?.spec;
+          const suppliedPanelSpec = inputArgs.panelSpec;
+          const candidateSpec = suppliedPanelSpec
+            ? (requestedKind === 'single-chart' && suppliedPanelSpec.kind === 'single-chart' ? suppliedPanelSpec.spec : suppliedPanelSpec)
+            : inputArgs.encoding
+              ? {
+                  ...(targetPanel?.spec?.kind === 'single-chart' ? existingSpec : {}),
+                  title:
+                    inputArgs.title ||
+                    `${inputArgs.figureIntent?.toUpperCase() || 'FIGURE'}: ${inputArgs.encoding?.y?.field || 'Y'} vs ${inputArgs.encoding?.x?.field || 'X'}`,
+                  subtitle: `Analytical mark: ${inputArgs.mark} | Intent: ${inputArgs.figureIntent}`,
+                  figureIntent: inputArgs.figureIntent,
+                  mark: inputArgs.mark,
+                  encoding: inputArgs.encoding,
+                  showsRawObservations: Boolean(inputArgs.showsRawObservations),
+                  uncertaintyEncoding: inputArgs.uncertaintyEncoding || null,
+                  errorBarMode: inputArgs.errorBarMode || existingSpec?.errorBarMode || 'none',
+                }
+              : existingSpec;
+
+          const patch = inputArgs.workspacePatch;
+          if (patch?.panelChanges) {
+            if (!Array.isArray(patch.panelChanges)) {
+              throw new Error('workspacePatch.panelChanges must be an array.');
+            }
+            const invalidChange = patch.panelChanges.find((change: any) => {
+              if (!change?.panelId || !targetPanelIds.includes(change.panelId)) return true;
+              if (!change.spec && !change.panelSpec && !change.frame) return true;
+              if (change.frame && ['x', 'y', 'width', 'height'].some((key) => !Number.isFinite(change.frame[key]) || change.frame[key] < 0)) return true;
+              return false;
+            });
+            if (invalidChange) {
+              throw new Error('Every workspace panel change must target an existing panel and include a valid spec or frame.');
+            }
+          }
+          if (patch?.layerOrder) {
+            const layerOrder = patch.layerOrder;
+            if (!Array.isArray(layerOrder) || layerOrder.length !== targetPanelIds.length || new Set(layerOrder).size !== layerOrder.length || layerOrder.some((id: string) => !targetPanelIds.includes(id))) {
+              throw new Error('workspacePatch.layerOrder must contain each active panel exactly once.');
+            }
+          }
+          const normalizedPatch = patch?.panelChanges
+            ? {
+                ...patch,
+                panelChanges: patch.panelChanges.map((change: any) => ({
+                  panelId: change.panelId,
+                  ...(change.panelSpec ? { spec: change.panelSpec } : {}),
+                  ...(change.frame ? { frame: change.frame } : {}),
+                })),
+              }
+            : patch;
 
           const domainCmdResult = proposeFigureRevision(this.store, {
             proposedSpec: candidateSpec,
             basedOnRevision: currentState.currentRevision,
             actor,
+            panelKind: requestedKind,
+            workspacePatch: normalizedPatch,
             commandPayload: inputArgs,
           });
 
@@ -218,34 +323,25 @@ export class WebMcpServer {
           const proposed = currentState.activePreview.proposedSpec;
           const confirmMessage = `Apply proposed figure revision to ${inputArgs.targetPanelId.toUpperCase()}?\n\nTitle: ${proposed.title || 'Untitled'}\nType: ${currentState.activePreview.panelKind || 'single-chart'}\nRevision: Rev ${currentState.currentRevision} -> Rev ${currentState.currentRevision + 1}`;
 
-          if (typeof window !== 'undefined') {
-            if (typeof (window as any).requestUserInteraction === 'function') {
-              try {
-                const res = await (window as any).requestUserInteraction({
-                  type: 'confirm',
-                  title: 'Confirm Figure Revision',
-                  message: confirmMessage,
-                  previewId: inputArgs.previewId,
-                  proposedSpec: proposed,
-                });
-                userConfirmed = Boolean(res?.confirmed ?? res);
-              } catch (e) {
-                confirmationUnavailable = true;
-              }
-            } else if (typeof (navigator as any).modelContext?.requestUserInteraction === 'function') {
-              try {
-                const res = await (navigator as any).modelContext.requestUserInteraction({
-                  type: 'confirm',
-                  title: 'Confirm Figure Revision',
-                  message: confirmMessage,
-                  previewId: inputArgs.previewId,
-                  proposedSpec: proposed,
-                });
-                userConfirmed = Boolean(res?.confirmed ?? res);
-              } catch (e) {
-                confirmationUnavailable = true;
-              }
-            } else {
+          if (interactionAgent?.requestUserInteraction) {
+            try {
+              userConfirmed = await interactionAgent.requestUserInteraction(async () => {
+                if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
+                  throw new Error('Browser confirmation is unavailable.');
+                }
+                return window.confirm(confirmMessage);
+              });
+            } catch (e) {
+              confirmationUnavailable = true;
+            }
+          } else if (
+            import.meta.env.DEV &&
+            typeof window !== 'undefined' &&
+            typeof (window as any).__FIGURE_FOUNDRY_TEST_CONFIRMATION__ === 'function'
+          ) {
+            try {
+              userConfirmed = Boolean(await (window as any).__FIGURE_FOUNDRY_TEST_CONFIRMATION__(confirmMessage));
+            } catch (e) {
               confirmationUnavailable = true;
             }
           } else {

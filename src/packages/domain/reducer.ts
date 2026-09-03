@@ -146,8 +146,7 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
         updatedAt: new Date().toISOString().split('T')[0],
       };
 
-      // Create initial figure for this project — seed one agent-editable panel so
-      // the canvas is never a blank white page on first open.
+      // Create an initial panel so the canvas is never blank on first open.
       const freshFig = {
         id: `fig-${Date.now()}`,
         name: `${newProj.name} - Canvas 1`,
@@ -159,9 +158,8 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
             frame: { x: 30, y: 20, width: 560, height: 360 },
             spec: {
               kind: 'single-chart',
-              isAgentEditable: true,
               spec: {
-                title: 'Agent Editable Chart',
+                title: 'WebMCP Chart',
                 mark: 'bar',
                 encoding: {
                   x: { field: 'species', type: 'nominal' },
@@ -478,25 +476,108 @@ export function domainReducer(state: DomainState, command: DomainCommand): Domai
     }
 
     case 'APPLY_PROPOSAL': {
-      const { panelId, spec, commitMessage } = command.payload;
-      const updatedPanels = state.figure.panels.map((p) =>
-        p.id === panelId ? { ...p, spec } : p
-      );
-      const updatedFigure = { ...state.figure, panels: updatedPanels };
+      const { panelId, spec, commitMessage, workspacePatch, provenance: provenanceMetadata } = command.payload;
+      const patchByPanelId = new Map((workspacePatch?.panelChanges || []).map((change) => [change.panelId, change]));
+      const updatedPanels = state.figure.panels.map((p) => {
+        const change = patchByPanelId.get(p.id);
+        return {
+          ...p,
+          spec: p.id === panelId ? spec : change?.spec || p.spec,
+          ...(change?.frame ? { frame: change.frame } : {}),
+        };
+      });
+      const updatedLayers = workspacePatch?.layerOrder
+        ? workspacePatch.layerOrder.map((panelIdInOrder, order) => {
+            const layer = state.figure.layers.find((candidate) => candidate.panelId === panelIdInOrder);
+            return layer ? { ...layer, order } : null;
+          }).filter(Boolean) as typeof state.figure.layers
+        : state.figure.layers;
+      const updatedFigure = { ...state.figure, panels: updatedPanels, layers: updatedLayers };
       saveFigureToStorage(updatedFigure);
 
       const provenance = recordRevision(
         state.provenance,
         updatedFigure,
         commitMessage || 'Applied WebMCP agent proposal',
-        'agent'
+        'agent',
+        {
+          panelId,
+          previewId: provenanceMetadata?.previewId,
+          basedOnRevision: provenanceMetadata?.basedOnRevision,
+          validationReport: provenanceMetadata?.validationReport,
+          commandPayload: provenanceMetadata?.commandPayload,
+          diffDescription: [
+            `Updated ${updatedFigure.panels.find((panel) => panel.id === panelId)?.label || panelId}`,
+            ...(workspacePatch?.panelChanges || [])
+              .filter((change) => change.panelId !== panelId)
+              .map((change) => `Updated ${change.panelId}`),
+            ...(workspacePatch?.layerOrder ? ['Reordered workspace panels'] : []),
+          ],
+          workspaceSnapshot: updatedFigure.panels
+            .map((panel) => ({ panelId: panel.id, kind: panel.spec.kind, spec: panel.spec, frame: panel.frame })),
+          workspaceLayerOrder: [...updatedFigure.layers].sort((a, b) => a.order - b.order).map((layer) => layer.panelId),
+        }
       );
 
       return {
         ...state,
         figure: updatedFigure,
+        figures: state.figures.map((figure) => figure.id === updatedFigure.id ? updatedFigure : figure),
         provenance,
         activePreview: null,
+      };
+    }
+
+    case 'RESTORE_SNAPSHOT': {
+      const event = state.provenance.events.find((candidate) => candidate.revision === command.payload.targetRevision);
+      if (!event) return state;
+      const panelId = event.targetPanelId || event.commandPayload?.targetPanelId || event.commandPayload?.panelId || state.figure.panels[0]?.id;
+      const currentPanel = state.figure.panels.find((panel) => panel.id === panelId);
+      if (!currentPanel) return state;
+      const historicalSnapshots = event.workspaceSnapshot?.length
+        ? event.workspaceSnapshot
+        : [{ panelId, kind: event.targetPanelKind || currentPanel.spec.kind, spec: event.specSnapshot as any, frame: currentPanel.frame }];
+      const normalizeSnapshot = (snapshot: { kind: string; spec: any }) => {
+        if (snapshot.spec?.kind === snapshot.kind) return snapshot.spec;
+        if (snapshot.kind === 'single-chart') {
+          return { kind: 'single-chart', spec: snapshot.spec };
+        }
+        return { ...snapshot.spec, kind: snapshot.kind };
+      };
+      const restoredFigure = {
+        ...state.figure,
+        panels: state.figure.panels.map((panel) => {
+          const snapshot = historicalSnapshots.find((candidate) => candidate.panelId === panel.id);
+          return snapshot
+            ? { ...panel, spec: normalizeSnapshot(snapshot), frame: snapshot.frame || panel.frame }
+            : panel;
+        }),
+        layers: event.workspaceLayerOrder
+          ? event.workspaceLayerOrder.map((panelIdInOrder, order) => {
+              const layer = state.figure.layers.find((layer) => layer.panelId === panelIdInOrder);
+              return layer ? { ...layer, order } : null;
+            }).filter(Boolean) as typeof state.figure.layers
+          : state.figure.layers,
+      };
+      saveFigureToStorage(restoredFigure);
+      const provenance = recordRevision(
+        state.provenance,
+        restoredFigure,
+        `Restored ${currentPanel.label} from Revision ${event.revision}`,
+        'human',
+        {
+          panelId,
+          basedOnRevision: state.provenance.events.length + 1,
+          validationReport: event.validationReport,
+          actionType: 'TIME_TRAVEL_RESTORE',
+          commandPayload: { targetRevision: event.revision, panelId },
+        }
+      );
+      return {
+        ...state,
+        figure: restoredFigure,
+        figures: state.figures.map((figure) => figure.id === restoredFigure.id ? restoredFigure : figure),
+        provenance,
       };
     }
 
