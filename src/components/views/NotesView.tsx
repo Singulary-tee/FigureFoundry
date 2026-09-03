@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { MultiPanelFigure } from '../../types/multipanel';
 import { DomainState } from '../../packages/domain/state';
+import { globalDomainStore } from '../../packages/domain/store';
 
 interface NotesViewProps {
   figure: MultiPanelFigure;
@@ -20,12 +21,11 @@ interface NotesViewProps {
   onNavigate: (view: 'figures' | 'dashboard' | 'data' | 'analyses' | 'notes' | 'settings' | 'help') => void;
 }
 
-const STORAGE_KEY_PREFIX = 'figurefoundry_notes_';
-
 export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'legend' | 'methods' | 'markdown'>('legend');
   const [legendText, setLegendText] = useState('');
   const [methodsText, setMethodsText] = useState('');
+  const [hasEdited, setHasEdited] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   
@@ -33,61 +33,40 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
   const project = domainState.projects.find(p => p.id === projectId);
   const projectName = project ? project.name : 'Unknown Project';
 
-  // Load existing notes or auto-generate initial draft
   useEffect(() => {
-    try {
-      const storedLegend = localStorage.getItem(`${STORAGE_KEY_PREFIX}legend_${projectId}`);
-      const storedMethods = localStorage.getItem(`${STORAGE_KEY_PREFIX}methods_${projectId}`);
+    const saved = domainState.notesByFigureId[figure.id];
+    const numbered = figure.panels.filter((panel) => panel.letter);
+    const titles = numbered
+      .map((panel) => {
+        const spec = panel.spec as any;
+        return `(${panel.letter}) ${spec.title || spec.spec?.title || panel.label || panel.spec.kind}`;
+      })
+      .join(', ');
+    const caption = figure.panels.find((panel) => !panel.letter && panel.spec.kind === 'text-caption');
+    const captionSpec = caption?.spec as any;
 
-      if (storedLegend) {
-        setLegendText(storedLegend);
-      } else {
-        // Auto-generate a starting draft from the actual panel specs
-        const lines: string[] = [];
-        const numbered = figure.panels.filter((p) => p.letter);
-        const caption = figure.panels.find((p) => !p.letter && p.spec.kind === 'text-caption');
-        const titles = numbered
-          .map((p) => {
-            const s = p.spec as any;
-            const t = s.title || s.spec?.title || p.label || p.spec.kind;
-            return `(${p.letter}) ${t}`;
-          })
-          .join(', ');
-        if (caption) {
-          const c = caption.spec as any;
-          lines.push(`${c.title || 'Figure caption'}`);
-          lines.push(c.captionText || '');
-        } else {
-          lines.push(`Figure 1. ${figure.name}.`);
-        }
-        lines.push(`Panels: ${titles}.`);
-        lines.push('Edit this draft freely — it is saved per project in this browser.');
-        setLegendText(lines.filter(Boolean).join('\n\n'));
-      }
-
-      if (storedMethods) {
-        setMethodsText(storedMethods);
-      } else {
-        const defaultMethods = `Statistical Methodology:\nMeta-analytic synthesis was performed using random-effects modeling (DerSimonian-Laird estimator) with inverse-variance study weighting. Heterogeneity was quantified via Cochran's Q test and Higgins' I² inconsistency metric. Potential publication bias and small-study effects were audited using Egger's linear regression of standard normal deviates on precision.`;
-        setMethodsText(defaultMethods);
-      }
-    } catch {
-      // Ignore localStorage read errors
-    }
-  }, [projectId, figure.id, figure.name, figure.panels, projectName]);
+    setLegendText(saved?.legend || [
+      captionSpec?.title || `Figure 1. ${figure.name}.`,
+      captionSpec?.captionText,
+      titles ? `Panels: ${titles}.` : '',
+    ].filter(Boolean).join('\n\n'));
+    setMethodsText(saved?.methods || '');
+    setHasEdited(false);
+  }, [domainState.notesByFigureId, figure.id, figure.name, figure.panels]);
 
   // Auto-save on change with debounce
   useEffect(() => {
+    if (!hasEdited) return;
     setSaveStatus('saving');
     const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(`${STORAGE_KEY_PREFIX}legend_${projectId}`, legendText);
-        localStorage.setItem(`${STORAGE_KEY_PREFIX}methods_${projectId}`, methodsText);
-        setSaveStatus('saved');
-      } catch {}
+      globalDomainStore.dispatch({
+        type: 'SET_FIGURE_NOTES',
+        payload: { figureId: figure.id, notes: { legend: legendText, methods: methodsText } },
+      });
+      setSaveStatus('saved');
     }, 500);
     return () => clearTimeout(timer);
-  }, [legendText, methodsText, projectId]);
+  }, [figure.id, legendText, methodsText, hasEdited]);
 
   const handleCopyMarkdown = () => {
     const fullDoc = `# ${projectName}\n\n## Figure Legend\n${legendText}\n\n## Methods Section\n${methodsText}`;
@@ -164,7 +143,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
               </label>
               <textarea
                 value={legendText}
-                onChange={(e) => setLegendText(e.target.value)}
+                onChange={(e) => { setHasEdited(true); setLegendText(e.target.value); }}
                 rows={12}
                 className="w-full p-4 bg-[#f8f9fa] dark:bg-[#121212] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs leading-relaxed font-sans outline-none focus:border-[#24b47e]"
                 placeholder="Draft figure legend here..."
@@ -182,7 +161,7 @@ export const NotesView: React.FC<NotesViewProps> = ({ figure, domainState, onNav
               </label>
               <textarea
                 value={methodsText}
-                onChange={(e) => setMethodsText(e.target.value)}
+                onChange={(e) => { setHasEdited(true); setMethodsText(e.target.value); }}
                 rows={12}
                 className="w-full p-4 bg-[#f8f9fa] dark:bg-[#121212] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs leading-relaxed font-sans outline-none focus:border-[#24b47e]"
                 placeholder="Describe your data preparation and analytical modeling..."

@@ -1,26 +1,15 @@
 import { MultiPanelFigure } from '../../types/multipanel';
 import { BUILTIN_THEMES } from './themes';
-import { runMetaAnalysis, generateFunnelPlotData } from '../stats/metaAnalysis';
+import { bindPanelToDataset } from './datasetBinding';
+import { profileDataset } from '../data-model/profiler';
 
-const initialStudies = [
-  { id: 's1', study: 'Healey 2013', effect: 0.85, ciLower: 0.62, ciUpper: 1.16 },
-  { id: 's2', study: 'Connolly 2016', effect: 0.69, ciLower: 0.52, ciUpper: 0.91 },
-  { id: 's3', study: 'Eikelboom 2018', effect: 0.92, ciLower: 0.70, ciUpper: 1.21 },
-  { id: 's4', study: 'Steffel 2019', effect: 1.15, ciLower: 0.82, ciUpper: 1.61 },
-  { id: 's5', study: 'Kato 2020', effect: 0.76, ciLower: 0.57, ciUpper: 1.01 },
-  { id: 's6', study: 'Bajaj 2021', effect: 0.90, ciLower: 0.65, ciUpper: 1.25 },
-  { id: 's7', study: 'Lopes 2022', effect: 0.72, ciLower: 0.53, ciUpper: 0.98 },
-];
-
-const computedMeta = runMetaAnalysis(initialStudies, 'IV, Random Effects', 'Odds Ratio (OR)');
-const computedFunnel = generateFunnelPlotData(computedMeta);
-
-export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
+const DEFAULT_FIGURE_TEMPLATE: MultiPanelFigure = {
   id: 'fig-starter-template',
   name: 'Example Scientific Figure',
   canvasSize: {
     width: 1200,
     height: 900,
+    dpi: 300,
   },
   activeThemeId: 'default-figurefoundry',
   themes: BUILTIN_THEMES,
@@ -37,7 +26,7 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
       },
       spec: {
         kind: 'forest-plot',
-        title: 'Odds Ratio (95% CI)',
+        title: 'Study effects with 95% CI',
         model: 'IV, Random Effects',
         effectMeasure: 'Odds Ratio (OR)',
         showCi95: true,
@@ -54,15 +43,8 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
           max: 10,
           referenceLine: 1.0,
         },
-        studies: computedMeta.studies.map((s) => ({
-          id: s.id,
-          study: s.study,
-          effect: s.effect,
-          ciLower: s.ciLower,
-          ciUpper: s.ciUpper,
-          weight: s.weight,
-        })),
-        pooledEstimate: computedMeta.pooledEstimate,
+        studies: [],
+        pooledEstimate: { effect: Number.NaN, ciLower: Number.NaN, ciUpper: Number.NaN, weightTotal: 0, label: 'Awaiting dataset' },
         favorsLeftText: 'Favors Treatment',
         favorsRightText: 'Favors Control',
       },
@@ -79,21 +61,21 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
       },
       spec: {
         kind: 'funnel-plot',
-        title: 'Funnel Plot (Publication Bias)',
+        title: 'Study effects by standard error',
         xAxis: {
           scale: 'log',
           min: -2,
           max: 2,
-          title: 'Odds Ratio (log scale)',
+          title: 'Effect (log scale)',
         },
         yAxis: {
           scale: 'linear',
           min: 0.0,
           max: 2.0,
-          title: 'SE (log OR)',
+          title: 'Standard error',
           inverted: true,
         },
-        points: computedFunnel.points,
+        points: [],
         showAxes: true,
         showGrid: true,
         showDataPoints: true,
@@ -113,17 +95,13 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
       },
       spec: {
         kind: 'grouped-bar',
-        title: 'Outcome Event Rates',
-        groups: [
-          { id: 'gb1', category: 'Bleeding', treatmentVal: 37, controlVal: 29 },
-          { id: 'gb2', category: 'Stroke', treatmentVal: 17, controlVal: 23 },
-          { id: 'gb3', category: 'MI', treatmentVal: 20, controlVal: 14 },
-          { id: 'gb4', category: 'Mortality', treatmentVal: 10, controlVal: 15 },
-        ],
+        title: 'Outcome rates by study',
+        groups: [],
         yAxis: {
           title: 'Event Rate (%)',
           min: 0,
           max: 40,
+          autoMax: true,
         },
         legend: {
           treatmentLabel: 'Treatment',
@@ -147,6 +125,7 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
       },
       spec: {
         kind: 'single-chart',
+        fieldMapping: { x: 'species', y: 'body_mass_g', color: 'island' },
         spec: {
           title: 'Comparative Morphometrics (Palmer Penguins)',
           figureIntent: 'comparison',
@@ -175,7 +154,7 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
         kind: 'text-caption',
         title: 'Figure 1. Multi-panel data synthesis and comparative morphometrics.',
         captionText:
-          'Forest plot of study effects (A), funnel plot demonstrating precision (B), stratified outcome rates (C), and agent-managed comparative specimen distributions (D).',
+          'Study effects, precision, outcome rates, and specimen measurements shown as separate panels.',
         fontSize: 13,
       },
     },
@@ -190,17 +169,30 @@ export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = {
   manualItems: [],
 };
 
+function createBoundExampleFigure(template: MultiPanelFigure): MultiPanelFigure {
+  const studyProfile = profileDataset('example-study-estimates');
+  const penguinProfile = profileDataset('palmer-penguins');
+  return {
+    ...template,
+    panels: template.panels.map((panel) => {
+      if (panel.spec.kind === 'text-caption') return panel;
+      const datasetId = panel.spec.kind === 'single-chart' ? 'palmer-penguins' : 'example-study-estimates';
+      return {
+        ...panel,
+        spec: bindPanelToDataset(panel.spec, datasetId, datasetId === 'palmer-penguins' ? penguinProfile : studyProfile),
+      };
+    }),
+  };
+}
+
+export const DEFAULT_MULTIPANEL_FIGURE: MultiPanelFigure = createBoundExampleFigure(DEFAULT_FIGURE_TEMPLATE);
+
 export function createNewFigure(title?: string): MultiPanelFigure {
   const id = `fig-${Date.now()}`;
   const name = title || `New Scientific Figure ${new Date().toLocaleDateString()}`;
   return {
+    ...structuredClone(DEFAULT_FIGURE_TEMPLATE),
     id,
     name,
-    canvasSize: { width: 1200, height: 800 },
-    activeThemeId: 'nature',
-    themes: BUILTIN_THEMES,
-    panels: [],
-    layers: [],
-    manualItems: [],
   };
 }

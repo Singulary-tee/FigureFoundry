@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useSyncExternalStore } from 'react';
-import { DomainState, INITIAL_DOMAIN_STATE } from './state';
+import { DomainState, INITIAL_DOMAIN_STATE, getAccessibleDatasetIds } from './state';
 import { DomainCommand } from './commands';
 import { domainReducer } from './reducer';
-import { FigureProject, ExportBundle } from '../../types';
+import { ExportBundle } from '../../types';
+import { FigureNotes } from './state';
+import { MultiPanelFigure } from '../../types/multipanel';
+import { DatasetRecord } from '../data-model/datasets';
+import { ProvenanceLedger } from '../provenance/ledger';
 import { loadDomainState } from './persistence';
 import { saveDomainState } from './persistence';
 
@@ -56,11 +60,14 @@ export const globalFigureStore = {
         spec: currentPanel?.spec?.kind === 'single-chart' ? currentPanel.spec.spec : null,
         provenanceLedger: s.provenance.events,
         activePreview: s.activePreview,
+        figure: s.figure,
         panels: s.figure?.panels || [],
         layers: s.figure?.layers || [],
         figures: s.figures || [],
         activeFigureId: s.activeFigureId || null,
         datasets: s.datasets || [],
+        analysisRuns: s.analysisRuns || [],
+        accessibleDatasetIds: Array.from(getAccessibleDatasetIds(s)),
       };
     }
     return cachedSnapshot;
@@ -92,6 +99,8 @@ export const globalFigureStore = {
     } else if (action.type === 'PROPOSE_SPEC') {
       // Legacy direct-commit callers are intentionally inert; proposals must be staged.
       return;
+    } else if (action.type === 'RECORD_ANALYSIS_RUN') {
+      globalDomainStore.dispatch(action as any);
     } else if (action.type === 'SET_PREVIEW' || action.type === 'CLEAR_PREVIEW') {
       globalDomainStore.dispatch(action as any);
     } else if (action.type === 'RESTORE_SNAPSHOT') {
@@ -119,10 +128,18 @@ export function useDomainStore(): { state: DomainState; dispatch: (command: Doma
   return { state, dispatch };
 }
 
-export function exportBundle(project: FigureProject): ExportBundle {
+export function exportBundle(
+  project: MultiPanelFigure,
+  filename = 'figure_project_bundle.json',
+  context: { datasets?: DatasetRecord[]; notes?: FigureNotes; provenance?: ProvenanceLedger; analysisRuns?: import('./state').AnalysisRun[] } = {},
+): ExportBundle {
   const bundle: ExportBundle = {
     bundleVersion: '1.0',
     project: JSON.parse(JSON.stringify(project)),
+    datasets: JSON.parse(JSON.stringify(context.datasets || [])),
+    notes: context.notes ? JSON.parse(JSON.stringify(context.notes)) : undefined,
+    provenance: context.provenance ? JSON.parse(JSON.stringify(context.provenance)) : undefined,
+    analysisRuns: context.analysisRuns ? JSON.parse(JSON.stringify(context.analysisRuns)) : undefined,
   };
 
   if (typeof window !== 'undefined') {
@@ -130,7 +147,7 @@ export function exportBundle(project: FigureProject): ExportBundle {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'figure_project_bundle.json';
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -140,7 +157,7 @@ export function exportBundle(project: FigureProject): ExportBundle {
   return bundle;
 }
 
-export function importBundle(bundle: ExportBundle): FigureProject {
+export function importBundle(bundle: ExportBundle): MultiPanelFigure {
   if (bundle.bundleVersion !== '1.0') {
     throw new Error('Invalid bundle version. Expected 1.0.');
   }

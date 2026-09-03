@@ -1,57 +1,55 @@
 # FigureFoundry
 
-> **Decision-Aware Scientific Figure Workbench with WebMCP Semantic Tool Contracts**
+FigureFoundry is a scientific figure publishing canvas for turning dataset-linked analyses into clear, publication-ready figures. It supports multi-panel composition, panel-local data bindings, uncertainty-aware visualizations, reversible editing, and persisted provenance.
 
-FigureFoundry bridges the gap between AI generation and scientific rigor. Instead of fragile pixel actuation or raw DOM automation, FigureFoundry exposes structured **WebMCP semantic tools** directly into the browser runtime, enforcing deterministic scientific validation, two-phase review, and persisted provenance tracking.
+## Supported figure components
 
----
+- Forest plots and subgroup analyses for study estimates with explicit confidence intervals.
+- Funnel plots for study effects and standard errors.
+- Grouped bar charts, single charts, volcano plots, and heatmaps.
+- Text captions, legends, annotations, and multi-panel layout with ordered layers.
 
-## Key Features
+## Core workflow
 
-1. **WebMCP Semantic Tools in the Browser**
-   - `inspect_dataset_fields`: High-signal, token-efficient summary of schema types, missingness, cardinality, and bounded sample values.
-   - `propose_figure_revision`: Prepares declarative Vega-Lite candidate specs, executes scientific validation rules, and yields non-destructive visual diffs.
-   - `apply_figure_revision`: Authorizes state commits with optimistic concurrency control and mandatory human consent verification.
+1. Open the example project or create a project and figure from the dashboard.
+2. Import a CSV, TSV, or JSON dataset, or use a configured dataset.
+3. Select a panel and choose its panel-local dataset in **Data**. The panel binding is authoritative even when the workspace selection changes.
+4. Use **Design** to map fields, choose an analysis-aware visualization, and tune axes, labels, and layout.
+5. Use **Analyses** for effect synthesis, heterogeneity, publication-bias diagnostics, and correlations. A forest plot is a visualization of study effects, not an analysis method.
+6. Review validation, provenance, and the figure preview before applying a proposed revision or exporting.
 
-2. **Deterministic Scientific Validation (Midway Guidelines)**
-   - Enforces raw observation display (jittered points / beeswarm / boxplots) when distributions are compared.
-   - Rejects illegal transformations (e.g., zero/negative values on log scales).
-   - Flags perceptual hazards (color overload with $>12$ categories, deceptive bar charts).
+## Scientific safeguards
 
-3. **Two-Phase Human-in-the-Loop Commit**
-   - Agent proposals are staged as transient `previewId` overlays with visible validation evidence before canonical state changes.
-   - The external browser agent requests native user interaction before the targeted panel is committed; the researcher keeps the final editorial veto.
+FigureFoundry preserves raw observations, explicit uncertainty, field and type validation, transformations, panel geometry, layer ordering, dataset bindings, and analysis history. It fails closed when a source is missing, incompatible, invalid, or outside the active project/workspace scope. Agent proposals are staged for review and require explicit human approval before canonical figure state changes. Provenance snapshots and revision links remain available for reproducible review.
 
-4. **Provenance Ledger**
-   - History tracking for modifications, actor tags (`agent` vs. `human`), timestamps, target panels, preview/base revisions, validation reports, command payloads, and exact panel snapshots with one-click time-travel replay.
+These safeguards support scientific publishing; they do not replace scientific judgment.
 
-5. **External-Agent-First Integration**
-   - Production uses the browser-native `modelContext` surface, so Chrome or the ChatGPT desktop browser agent discovers and invokes FigureFoundry tools in the live page.
-   - A WebMCP inspector remains available only in local development builds for contract testing; it is not exposed as a production agent simulator.
+## Agent integration
 
-## Try It
+The app exposes structured browser-facing semantic tools for inspecting datasets, proposing declarative revisions, validating candidates, and applying approved revisions. The local development inspector and harness are verification surfaces, not a claim of native WebMCP support. The editor controls remain available when the semantic surface is unavailable.
 
-Open the public live URL in a WebMCP-capable Chrome build (with the experiment enabled when required) or the ChatGPT desktop app's built-in browser.
+## Development
 
-Ask the agent: **"Look at the comparison panel's dataset, then propose a figure that compares [field A] and [field B] grouped by [category field], showing individual data points rather than just an average."**
+Requirements: Node.js with npm.
 
-Expected tools, in order:
-1. `inspect_figure_workspace` — agent learns every panel, panel kind, and the current workspace state.
-2. `inspect_dataset_fields` — agent learns the real column names/types (do not hardcode field names into the prompt above; the agent must discover them).
-3. `propose_figure_revision` — agent submits a candidate spec; a validation report and `previewId` come back.
-4. `apply_figure_revision` — agent calls this with the `previewId`; the WebMCP execution context requests native user interaction before commit.
+```bash
+npm install
+npm run dev
+```
 
-Expected visible result: before confirmation, the editor shows a proposal-review strip with the target, preview ID, and validation state while the canonical figure remains unchanged. After confirmation, the targeted panel re-renders in place, no unrelated panel changes, the revision advances, and the History drawer contains the exact audit event. No custom in-app agent console is needed.
+The managed Preview runs the Vite development server and exposes the current session separately from persisted project data. Refreshing the app restores saved workspaces, projects, figures, datasets, notes, provenance, and analysis history from local storage; pending proposals remain session-scoped.
 
-Expected confirmation point: `agent.requestUserInteraction()` inside `apply_figure_revision`'s native WebMCP execution — not a fake page-level agent prompt. If that execution context is unavailable, the apply tool fails closed.
+Run the repository checks before publishing changes:
 
-Fallback behavior: if WebMCP is unavailable, every control used above is also reachable manually via the Design tab on the same panel — the app is fully functional without an agent.
+```bash
+npm run lint
+npm run test:data-analysis
+npm run build
+git diff --check
+```
 
-Reset: Refresh the page; the committed workspace and provenance history are restored from local storage, while pending previews and the WebMCP connection are session-scoped.
+For UI verification, use the managed Preview and harness browser. Capture fresh screenshots or focused recordings for material interface changes, inspect them for non-public data, and do not use Playwright.
 
----
+## License
 
-## Tech Stack
-- **Core**: React 19, TypeScript 5.8, Tailwind CSS v4, Motion
-- **Visualization**: Vega 6, Vega-Lite 6, Vega-Embed
-- **Tool Protocol**: WebMCP in-browser semantic contract architecture
+See [LICENSE](LICENSE).

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Stage, Layer as KonvaLayer, Group, Rect, Transformer } from 'react-konva';
+import { Stage, Layer as KonvaLayer, Group, Rect, Text, Transformer } from 'react-konva';
 import Konva from 'konva';
 import {
   MultiPanelFigure,
@@ -17,6 +17,7 @@ import { SingleChartKonva } from './SingleChartKonva';
 import { ManualItemsKonva } from './ManualItemsKonva';
 import { useMobileCanvasTouch } from './useMobileCanvasTouch';
 import { snapPanelFrame } from '../../packages/multipanel/layout';
+import { isDatasetBoundPanel } from '../../packages/multipanel/datasetBinding';
 import { Copy, Trash2, Lock, Maximize2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
 interface FigureCanvasProps {
@@ -39,10 +40,75 @@ interface FigureCanvasProps {
   onToggleLockSelected: () => void;
   stageRef: React.RefObject<Konva.Stage | null>;
   datasetId?: string;
+  accessibleDatasetIds?: ReadonlySet<string>;
   isPendingApproval?: boolean;
   pendingPanelId?: string | null;
   layoutTransitionKey?: number;
 }
+
+const DataUnavailablePanel: React.FC<{
+  frame: { width: number; height: number };
+  letter: string;
+  title: string;
+  message: string;
+  theme: CanvasTheme;
+}> = ({ frame, letter, title, message, theme }) => (
+  <Group>
+    <Rect
+      x={0}
+      y={0}
+      width={frame.width}
+      height={frame.height}
+      fill={theme.colors.cardBackground}
+      stroke="#fca5a5"
+      strokeWidth={1}
+      cornerRadius={2}
+    />
+    {letter && (
+      <Text
+        x={16}
+        y={16}
+        text={letter}
+        fontSize={16}
+        fontStyle="bold"
+        fontFamily="system-ui, -apple-system, sans-serif"
+        fill={theme.colors.text}
+      />
+    )}
+    <Text
+      x={letter ? 45 : 16}
+      y={16}
+      width={frame.width - (letter ? 60 : 32)}
+      text={title}
+      fontSize={13}
+      fontStyle="bold"
+      fontFamily="system-ui, -apple-system, sans-serif"
+      fill={theme.colors.text}
+    />
+    <Rect
+      x={20}
+      y={48}
+      width={Math.max(80, frame.width - 40)}
+      height={Math.max(42, frame.height - 68)}
+      fill="#fef2f2"
+      stroke="#fca5a5"
+      strokeWidth={1}
+      cornerRadius={4}
+    />
+    <Text
+      x={34}
+      y={Math.max(62, frame.height / 2 - 12)}
+      width={Math.max(52, frame.width - 68)}
+      text={`Data unavailable: ${message}`}
+      fontSize={11}
+      fontStyle="bold"
+      fontFamily="system-ui, -apple-system, sans-serif"
+      fill="#991b1b"
+      align="center"
+      wrap="word"
+    />
+  </Group>
+);
 
 export const FigureCanvas: React.FC<FigureCanvasProps> = ({
   figure,
@@ -64,6 +130,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
   onToggleLockSelected,
   stageRef,
   datasetId,
+  accessibleDatasetIds,
   isPendingApproval,
   pendingPanelId,
   layoutTransitionKey = 0,
@@ -430,6 +497,18 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
 
                 const isSelected = selectedPanelId === panel.id;
                 const panelFrame = displayedFrames[panel.id] || panel.frame;
+                const inaccessibleDataset = isDatasetBoundPanel(panel.spec)
+                  && Boolean(panel.spec.datasetId)
+                  && !accessibleDatasetIds?.has(panel.spec.datasetId as string);
+                const scopeBindingIssue = 'Panel dataset is outside the active project scope. Rebind this panel.';
+                const panelBindingIssues = inaccessibleDataset
+                  ? [scopeBindingIssue]
+                  : isDatasetBoundPanel(panel.spec)
+                    ? (panel.spec.datasetId ? (panel.spec.bindingIssues || []) : ['No dataset is bound to this panel.'])
+                    : [];
+                const panelTitle = panel.spec.kind === 'single-chart' || panel.spec.kind === 'volcano-plot' || panel.spec.kind === 'heatmap'
+                  ? panel.spec.spec.title
+                  : panel.spec.title;
 
                 return (
                   <Group
@@ -437,6 +516,10 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                     id={`group-${panel.id}`}
                     x={panelFrame.x}
                     y={panelFrame.y}
+                    clipX={0}
+                    clipY={0}
+                    clipWidth={Math.max(120, panelFrame.width)}
+                    clipHeight={Math.max(80, panelFrame.height)}
                     draggable={!layer.locked && toolMode === 'select'}
                     onClick={(e) => {
                       e.cancelBubble = true;
@@ -491,10 +574,19 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
                       />
                     )}
 
+                    {panelBindingIssues.length > 0 ? (
+                      <DataUnavailablePanel
+                        frame={panelFrame}
+                        letter={panel.letter}
+                        title={panelTitle}
+                        message={panelBindingIssues.join(' ')}
+                        theme={activeTheme}
+                      />
+                    ) : <>
                     {/* Specific Panel Type Renderers */}
                     {panel.spec.kind === 'forest-plot' && (
                       <ForestPlotKonva
-                        spec={panel.spec}
+                        spec={inaccessibleDataset ? { ...panel.spec, bindingIssues: [scopeBindingIssue] } : panel.spec}
                         frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
@@ -503,7 +595,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
 
                     {panel.spec.kind === 'funnel-plot' && (
                       <FunnelPlotKonva
-                        spec={panel.spec}
+                        spec={inaccessibleDataset ? { ...panel.spec, bindingIssues: [scopeBindingIssue] } : panel.spec}
                         frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
@@ -512,7 +604,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
 
                     {panel.spec.kind === 'subgroup-analysis' && (
                       <SubgroupPlotKonva
-                        spec={panel.spec}
+                        spec={inaccessibleDataset ? { ...panel.spec, bindingIssues: [scopeBindingIssue] } : panel.spec}
                         frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
@@ -521,7 +613,7 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
 
                     {panel.spec.kind === 'grouped-bar' && (
                       <GroupedBarKonva
-                        spec={panel.spec}
+                        spec={inaccessibleDataset ? { ...panel.spec, bindingIssues: [scopeBindingIssue] } : panel.spec}
                         frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
@@ -538,25 +630,36 @@ export const FigureCanvas: React.FC<FigureCanvasProps> = ({
 
                     {panel.spec.kind === 'single-chart' && (
                       <SingleChartKonva
-                        spec={panel.spec}
+                        spec={inaccessibleDataset ? { ...panel.spec, bindingIssues: [scopeBindingIssue] } : panel.spec}
                         frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
-                        datasetId={datasetId}
+                        datasetId={inaccessibleDataset ? undefined : panel.spec.datasetId || datasetId}
                         isPendingApproval={isPendingApproval && pendingPanelId === panel.id}
                       />
                     )}
 
                     {(panel.spec.kind === 'volcano-plot' || panel.spec.kind === 'heatmap') && (
                       <SingleChartKonva
-                        spec={{ kind: 'single-chart', spec: panel.spec.spec }}
+                        spec={{
+                          kind: 'single-chart',
+                          datasetId: inaccessibleDataset ? undefined : panel.spec.datasetId,
+                          bindingIssues: inaccessibleDataset ? [scopeBindingIssue] : panel.spec.bindingIssues,
+                          fieldMapping: panel.spec.fieldMapping,
+                          spec: {
+                            ...panel.spec.spec,
+                            mark: panel.spec.kind === 'heatmap' ? 'rect' : 'point',
+                            volcanoThreshold: panel.spec.kind === 'volcano-plot' ? panel.spec.significanceThreshold : undefined,
+                          },
+                        }}
                         frame={panelFrame}
                         letter={panel.letter}
                         theme={activeTheme}
-                        datasetId={datasetId}
+                        datasetId={inaccessibleDataset ? undefined : panel.spec.datasetId || datasetId}
                         isPendingApproval={isPendingApproval && pendingPanelId === panel.id}
                       />
                     )}
+                    </>}
                   </Group>
                 );
               })}

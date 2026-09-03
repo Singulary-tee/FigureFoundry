@@ -344,6 +344,7 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
         setExecArgsJson(
           JSON.stringify(
             {
+              targetPanelId: (currentState as any).selectedPanelId || 'panel-a',
               figureIntent: 'relationship',
               mark: 'point',
               encoding: {
@@ -366,7 +367,8 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
           JSON.stringify(
             {
               previewId: currentState.activePreview?.previewId || 'prev_sample_123',
-              basedOnRevision: currentState.currentRevision
+              basedOnRevision: currentState.currentRevision,
+              targetPanelId: currentState.activePreview?.panelId || (currentState as any).selectedPanelId || 'panel-a'
             },
             null,
             2
@@ -455,7 +457,9 @@ export const WebMcpDevPanel: React.FC<WebMcpDevPanelProps> = ({ isOpen, onClose 
     }
 
     try {
-      const res = await executeTool(selectedExecToolName, parsedArgs, execActor);
+      const res = await executeTool(selectedExecToolName, parsedArgs, execActor, {
+        requestUserInteraction: async (callback) => callback(),
+      });
       setExecResult(res.result);
     } catch (e: any) {
       setExecError(`Execution failed: ${e.message}`);

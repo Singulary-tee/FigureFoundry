@@ -369,6 +369,14 @@ const SEATTLE_WEATHER_RECORDS = [
   { date: '2012-10-10', precipitation: 5.1, temp_max: 15.6, temp_min: 10.0, wind: 3.8, weather: 'rain' }
 ];
 
+const EXAMPLE_STUDY_ESTIMATE_RECORDS = [
+  { study: 'North Clinic', category: 'North Clinic', effect: 1.18, ciLower: 0.92, ciUpper: 1.51, standardError: 0.125, treatmentVal: 18, controlVal: 22, subgroup: 'Adults', iSquared: 18 },
+  { study: 'Harbor Medical', category: 'Harbor Medical', effect: 0.84, ciLower: 0.67, ciUpper: 1.06, standardError: 0.117, treatmentVal: 14, controlVal: 19, subgroup: 'Adults', iSquared: 26 },
+  { study: 'Cedar Research', category: 'Cedar Research', effect: 1.42, ciLower: 1.08, ciUpper: 1.87, standardError: 0.139, treatmentVal: 24, controlVal: 17, subgroup: 'Older adults', iSquared: 42 },
+  { study: 'Riverside Trial', category: 'Riverside Trial', effect: 0.97, ciLower: 0.76, ciUpper: 1.24, standardError: 0.124, treatmentVal: 16, controlVal: 16, subgroup: 'Older adults', iSquared: 31 },
+  { study: 'Summit Center', category: 'Summit Center', effect: 1.27, ciLower: 1.01, ciUpper: 1.60, standardError: 0.117, treatmentVal: 21, controlVal: 20, subgroup: 'All participants', iSquared: 22 },
+];
+
 export interface DatasetEntry {
   id: string;
   title: string;
@@ -384,6 +392,8 @@ export interface DatasetRecord {
   description: string;
   citation?: string;
   rows: Record<string, any>[];
+  revision?: number;
+  revisionId?: string;
 }
 
 export const DEMO_DATASETS: Record<string, DatasetEntry> = {
@@ -407,6 +417,13 @@ export const DEMO_DATASETS: Record<string, DatasetEntry> = {
     description: 'Daily precipitation, temperature, and wind speed recordings.',
     citation: 'NOAA Climate Data.',
     records: SEATTLE_WEATHER_RECORDS
+  },
+  'example-study-estimates': {
+    id: 'example-study-estimates',
+    title: 'Example Study Estimates',
+    description: 'A small, synthetic study-estimate table used to demonstrate uncertainty-aware panels.',
+    citation: 'FigureFoundry demonstration dataset.',
+    records: EXAMPLE_STUDY_ESTIMATE_RECORDS,
   }
 };
 
@@ -434,5 +451,13 @@ export const BUILTIN_DATASETS: Record<string, DatasetRecord> = {
     description: 'Daily precipitation, temperature, and wind speed recordings.',
     citation: 'NOAA Climate Data.',
     rows: SEATTLE_WEATHER_RECORDS,
+  },
+  'example-study-estimates': {
+    id: 'example-study-estimates',
+    name: 'Example Study Estimates',
+    title: 'Example Study Estimates',
+    description: 'A small, synthetic study-estimate table used to demonstrate uncertainty-aware panels.',
+    citation: 'FigureFoundry demonstration dataset.',
+    rows: EXAMPLE_STUDY_ESTIMATE_RECORDS,
   },
 };

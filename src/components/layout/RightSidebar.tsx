@@ -10,7 +10,6 @@ import {
   FileCode,
   Plus,
   Trash2,
-  RefreshCw,
   Calculator,
   ChevronsLeft,
   ChevronsRight,
@@ -27,11 +26,11 @@ import {
   SubgroupSpec,
   GroupedBarSpec,
   TextCaptionSpec,
-  SingleChartSpec,
   CanvasTheme,
 } from '../../types/multipanel';
-import { runMetaAnalysis, generateFunnelPlotData } from '../../packages/stats/metaAnalysis';
-import { profileDataset, registerRuntimeDataset, getRegisteredDatasets } from '../../packages/data-model/profiler';
+import { runMetaAnalysis } from '../../packages/stats/metaAnalysis';
+import { profileDataset, registerRuntimeDataset } from '../../packages/data-model/profiler';
+import { bindPanelToDataset, getPanelBindingDefinitions, isDatasetBoundPanel } from '../../packages/multipanel/datasetBinding';
 
 interface RightSidebarProps {
   figure: MultiPanelFigure;
@@ -53,6 +52,7 @@ interface RightSidebarProps {
   selectedDatasetId?: string | null;
   availableDatasets?: any[];
   onSelectDataset?: (datasetId: string) => void;
+  onUpdateDataset?: (datasetId: string, rows: Record<string, any>[]) => void;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -75,6 +75,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   selectedDatasetId,
   availableDatasets,
   onSelectDataset,
+  onUpdateDataset,
 }) => {
   const [activeTab, setActiveTab] = useState<'design' | 'data' | 'export'>('design');
 
@@ -87,53 +88,68 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
   const selectedPanel = figure.panels.find((p) => p.id === selectedPanelId) || figure.panels[0];
   const spec = selectedPanel?.spec;
+  const parseNumericInput = (value: string) => value.trim() === '' ? Number.NaN : Number(value);
+  const formatNumeric = (value: number, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : 'Not estimable';
+  const hasInvalidForestMapping = spec?.kind === 'forest-plot' && Boolean(spec.datasetId) && spec.studies.some((study) => {
+    const requiresPositiveValues = !['Mean Difference (MD)', 'Risk Difference (RD)'].includes(spec.effectMeasure);
+    return !Number.isFinite(study.effect) || !Number.isFinite(study.ciLower) || !Number.isFinite(study.ciUpper) ||
+      (requiresPositiveValues && (study.effect <= 0 || study.ciLower <= 0)) ||
+      study.ciLower > study.effect || study.ciUpper < study.effect;
+  });
 
   // Compute live meta-analysis stats for Forest Plot
   const currentMetaStats = useMemo(() => {
-    if (spec?.kind === 'forest-plot') {
-      return runMetaAnalysis(
-        (spec as ForestPlotSpec).studies,
-        (spec as ForestPlotSpec).model as any,
-        (spec as ForestPlotSpec).effectMeasure as any
-      );
+    if (spec?.kind === 'forest-plot' && spec.datasetId && !spec.bindingIssues?.length && !hasInvalidForestMapping && spec.studies.length >= 2) {
+      try {
+        return runMetaAnalysis(
+          (spec as ForestPlotSpec).studies,
+          (spec as ForestPlotSpec).model as any,
+          (spec as ForestPlotSpec).effectMeasure as any
+        );
+      } catch {
+        return null;
+      }
     }
     return null;
   }, [spec]);
 
-    // Single chart runtime dataset records editing handlers
+  const panelUsesDataset = Boolean(spec && isDatasetBoundPanel(spec));
+  const isPanelBoundToDataset = panelUsesDataset && Boolean((spec as any).datasetId);
   const activeDatasetId =
+    (panelUsesDataset && (spec as any).datasetId) ||
     selectedDatasetId ||
-    (spec?.kind === 'single-chart' && spec.datasetId) ||
-    'palmer-penguins';
+    '';
   const [datasetRecordVersion, setDatasetRecordVersion] = useState(0);
 
   const currentDatasetProfile = useMemo(() => {
-    if (spec?.kind === 'single-chart') {
+    if (isPanelBoundToDataset) {
       return profileDataset(activeDatasetId);
     }
     return null;
   }, [spec, activeDatasetId, datasetRecordVersion]);
 
   const chartFields = currentDatasetProfile?.fields || [];
-  const updateChartDataset = (datasetId: string) => {
-    if (spec?.kind !== 'single-chart') return;
-    onSelectDataset?.(datasetId);
-    onUpdatePanelSpec(selectedPanel.id, { ...spec, datasetId });
+  const updatePanelDataset = (datasetId: string) => {
+    if (!spec || !isDatasetBoundPanel(spec)) return;
+    onUpdatePanelSpec(selectedPanel.id, bindPanelToDataset(spec, datasetId, profileDataset(datasetId)));
+  };
+  const updatePanelFieldMapping = (key: string, field: string) => {
+    if (!spec || !isDatasetBoundPanel(spec)) return;
+    onUpdatePanelSpec(
+      selectedPanel.id,
+      bindPanelToDataset(spec, activeDatasetId, profileDataset(activeDatasetId), { [key]: field }),
+    );
   };
   const updateChartEncoding = (channel: 'x' | 'y' | 'color' | 'shape', field: string) => {
     if (spec?.kind !== 'single-chart') return;
-    const current = ((spec as SingleChartSpec).spec || {}) as any;
-    const existing = current.encoding?.[channel] || {};
+    updatePanelFieldMapping(channel, field);
+  };
+  const updateScientificChart = (field: string, value: any) => {
+    if (spec?.kind !== 'volcano-plot' && spec?.kind !== 'heatmap') return;
     onUpdatePanelSpec(selectedPanel.id, {
       ...spec,
-      datasetId: activeDatasetId,
-      spec: {
-        ...current,
-        encoding: {
-          ...(current.encoding || {}),
-          [channel]: { ...existing, field, type: chartFields.find((item) => item.name === field)?.type || existing.type || 'nominal' },
-        },
-      },
+      [field]: value,
+      spec: field === 'title' ? { ...spec.spec, title: value } : spec.spec,
     });
   };
 
@@ -174,19 +190,23 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         ...spec,
         [field]: value,
       } as ForestPlotSpec;
-      // Re-run statistical meta-analysis with the updated model
-      const meta = runMetaAnalysis(updatedSpec.studies, updatedSpec.model as any, updatedSpec.effectMeasure as any);
-      onUpdatePanelSpec(selectedPanel.id, {
+      const nextEffectMeasure = updatedSpec.effectMeasure;
+      const normalizedSpec = {
         ...updatedSpec,
-        studies: meta.studies.map((s) => ({
-          id: s.id,
-          study: s.study,
-          effect: s.effect,
-          ciLower: s.ciLower,
-          ciUpper: s.ciUpper,
-          weight: s.weight,
-        })),
-        pooledEstimate: meta.pooledEstimate,
+        xAxis: field === 'effectMeasure' && ['Mean Difference (MD)', 'Risk Difference (RD)'].includes(nextEffectMeasure)
+          ? { ...spec.xAxis, scale: 'linear' }
+          : spec.xAxis,
+      } as ForestPlotSpec;
+      // Re-run statistical meta-analysis with the updated model
+      let meta = null;
+      try {
+        meta = runMetaAnalysis(normalizedSpec.studies, normalizedSpec.model as any, normalizedSpec.effectMeasure as any);
+      } catch {
+        // Keep unsupported combinations visibly unavailable rather than preserving stale pooling.
+      }
+      onUpdatePanelSpec(selectedPanel.id, {
+        ...normalizedSpec,
+        pooledEstimate: meta?.pooledEstimate || { ...normalizedSpec.pooledEstimate, effect: Number.NaN, ciLower: Number.NaN, ciUpper: Number.NaN, weightTotal: 0, label: 'Unavailable' },
       });
       return;
     }
@@ -217,18 +237,16 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     };
 
     // Calculate statistical meta-analysis dynamically
-    const meta = runMetaAnalysis(currentStudies, (spec as ForestPlotSpec).model as any, (spec as ForestPlotSpec).effectMeasure as any);
+    let meta = null;
+    try {
+      meta = runMetaAnalysis(currentStudies, (spec as ForestPlotSpec).model as any, (spec as ForestPlotSpec).effectMeasure as any);
+    } catch {
+      // Keep unsupported combinations visibly unavailable rather than preserving stale pooling.
+    }
     onUpdatePanelSpec(selectedPanel.id, {
       ...spec,
-      studies: meta.studies.map((s) => ({
-        id: s.id,
-        study: s.study,
-        effect: s.effect,
-        ciLower: s.ciLower,
-        ciUpper: s.ciUpper,
-        weight: s.weight,
-      })),
-      pooledEstimate: meta.pooledEstimate,
+      studies: currentStudies,
+      pooledEstimate: meta?.pooledEstimate || { ...spec.pooledEstimate, effect: Number.NaN, ciLower: Number.NaN, ciUpper: Number.NaN, weightTotal: 0, label: 'Unavailable' },
     });
   };
 
@@ -240,56 +258,40 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       {
         id: `study-${Date.now()}`,
         study: `New Study ${nextNum}`,
-        effect: 0.8,
-        ciLower: 0.55,
-        ciUpper: 1.15,
-        weight: 10,
+        effect: Number.NaN,
+        ciLower: Number.NaN,
+        ciUpper: Number.NaN,
+        weight: Number.NaN,
       },
     ];
-
-    const meta = runMetaAnalysis(newStudies, (spec as ForestPlotSpec).model as any, (spec as ForestPlotSpec).effectMeasure as any);
     onUpdatePanelSpec(selectedPanel.id, {
       ...spec,
-      studies: meta.studies.map((s) => ({
-        id: s.id,
-        study: s.study,
-        effect: s.effect,
-        ciLower: s.ciLower,
-        ciUpper: s.ciUpper,
-        weight: s.weight,
-      })),
-      pooledEstimate: meta.pooledEstimate,
+      studies: newStudies,
+      pooledEstimate: {
+        ...(spec as ForestPlotSpec).pooledEstimate,
+        effect: Number.NaN,
+        ciLower: Number.NaN,
+        ciUpper: Number.NaN,
+        weightTotal: 0,
+        label: 'Awaiting valid studies',
+      },
     });
   };
 
   const handleRemoveStudy = (index: number) => {
     if (spec.kind !== 'forest-plot') return;
     const newStudies = (spec as ForestPlotSpec).studies.filter((_, idx) => idx !== index);
-    const meta = runMetaAnalysis(newStudies, (spec as ForestPlotSpec).model as any, (spec as ForestPlotSpec).effectMeasure as any);
+    let meta = null;
+    try {
+      meta = runMetaAnalysis(newStudies, (spec as ForestPlotSpec).model as any, (spec as ForestPlotSpec).effectMeasure as any);
+    } catch {
+      // Keep unsupported combinations visibly unavailable rather than preserving stale pooling.
+    }
     onUpdatePanelSpec(selectedPanel.id, {
       ...spec,
-      studies: meta.studies.map((s) => ({
-        id: s.id,
-        study: s.study,
-        effect: s.effect,
-        ciLower: s.ciLower,
-        ciUpper: s.ciUpper,
-        weight: s.weight,
-      })),
-      pooledEstimate: meta.pooledEstimate,
+      studies: newStudies,
+      pooledEstimate: meta?.pooledEstimate || { ...spec.pooledEstimate, effect: Number.NaN, ciLower: Number.NaN, ciUpper: Number.NaN, weightTotal: 0, label: 'Unavailable' },
     });
-  };
-
-  const handleSyncFunnelPlot = () => {
-    if (spec.kind !== 'forest-plot' || !currentMetaStats) return;
-    const funnelData = generateFunnelPlotData(currentMetaStats);
-    const funnelPanel = figure.panels.find((p) => p.spec.kind === 'funnel-plot');
-    if (funnelPanel) {
-      onUpdatePanelSpec(funnelPanel.id, {
-        ...funnelPanel.spec,
-        points: funnelData.points,
-      });
-    }
   };
 
   // Funnel plot data editing handlers
@@ -313,8 +315,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       {
         id: `pt-${Date.now()}`,
         study: `Study ${spec.points.length + 1}`,
-        effect: 0.1,
-        standardError: 0.4,
+        effect: Number.NaN,
+        standardError: Number.NaN,
       },
     ];
     onUpdatePanelSpec(selectedPanel.id, {
@@ -353,8 +355,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       {
         id: `gb-${Date.now()}`,
         category: `Outcome ${spec.groups.length + 1}`,
-        treatmentVal: 25,
-        controlVal: 20,
+        treatmentVal: Number.NaN,
+        controlVal: Number.NaN,
       },
     ];
     onUpdatePanelSpec(selectedPanel.id, {
@@ -393,10 +395,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       {
         id: `sg-${Date.now()}`,
         groupName: `Subgroup ${spec.subgroups.length + 1}`,
-        effect: 0.7,
-        ciLower: 0.5,
-        ciUpper: 0.95,
-        iSquared: 30,
+        effect: Number.NaN,
+        ciLower: Number.NaN,
+        ciUpper: Number.NaN,
+        iSquared: Number.NaN,
       },
     ];
     onUpdatePanelSpec(selectedPanel.id, {
@@ -429,9 +431,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         citation: profile.citation,
         records,
       });
+      onUpdateDataset?.(activeDatasetId, records);
       setDatasetRecordVersion((v) => v + 1);
-      // Force update panel spec to trigger Vega chart redraw
-      onUpdatePanelSpec(selectedPanel.id, { ...spec });
     }
   };
 
@@ -450,8 +451,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       citation: profile.citation,
       records,
     });
+    onUpdateDataset?.(activeDatasetId, records);
     setDatasetRecordVersion((v) => v + 1);
-    onUpdatePanelSpec(selectedPanel.id, { ...spec });
   };
 
   const handleRemoveDatasetRecord = (rowIndex: number) => {
@@ -464,8 +465,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       citation: profile.citation,
       records,
     });
+    onUpdateDataset?.(activeDatasetId, records);
     setDatasetRecordVersion((v) => v + 1);
-    onUpdatePanelSpec(selectedPanel.id, { ...spec });
   };
 
   const sidebarContent = (
@@ -522,38 +523,48 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     </select>
                   </div>
 
-                  {/* Single Chart specific Agent Badge and Controls */}
+                  {panelUsesDataset && (
+                    <div className="space-y-3 rounded-lg border border-[#e4e4e7] dark:border-[#27272a] bg-[#fafafa] dark:bg-[#18181b] p-3">
+                      <div>
+                        <span className="block text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5]">Field mapping</span>
+                        <p className="mt-0.5 text-[10px] text-[#71717a]">Choose which fields from this panel’s source drive the view. Select the source in Data.</p>
+                      </div>
+                      {!isPanelBoundToDataset ? (
+                        <p className="text-[10px] text-[#71717a]">Select a panel dataset in Data to map fields.</p>
+                      ) : chartFields.length > 0 ? getPanelBindingDefinitions(spec).map((binding) => (
+                        <div key={binding.key}>
+                          <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">{binding.label}</label>
+                          <select
+                            value={(spec as any).fieldMapping?.[binding.key] || (spec as any).spec?.encoding?.[binding.key]?.field || ''}
+                            onChange={(e) => updatePanelFieldMapping(binding.key, e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-[#121212] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs text-[#0f172a] dark:text-[#f4f4f5] outline-none"
+                          >
+                            {binding.optional ? <option value="">None</option> : null}
+                            {chartFields.filter((field) => binding.type === 'any' || field.type === binding.type || (binding.type === 'categorical' && field.type === 'ordinal')).map((field) => <option key={field.name} value={field.name}>{field.name} ({field.type})</option>)}
+                          </select>
+                        </div>
+                      )) : (
+                        <p className="text-[10px] text-amber-700 dark:text-amber-300">This dataset has no fields available for binding.</p>
+                      )}
+                      {hasInvalidForestMapping && (
+                        <p className="text-[10px] text-amber-700 dark:text-amber-300">Select valid estimate and interval fields with lower ≤ estimate ≤ upper.</p>
+                      )}
+                      {(spec as any).bindingIssues?.length > 0 && (
+                        <div className="rounded-md border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/30 p-2 text-[10px] text-rose-700 dark:text-rose-300">
+                          <strong>Binding incomplete:</strong> {(spec as any).bindingIssues.join(' ')}
+                        </div>
+                      )}
+                      {(spec as any).bindingWarnings?.length > 0 && (
+                        <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 p-2 text-[10px] text-amber-700 dark:text-amber-300">
+                          <strong>Data quality:</strong> {(spec as any).bindingWarnings.join(' ')}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Vega chart controls */}
                   {spec.kind === 'single-chart' && (
                     <div className="space-y-3">
-                      <div className="p-2.5 rounded-lg bg-[#f4f4f5] dark:bg-[#1f1f23] border border-[#e4e4e7] dark:border-[#27272a]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5]">Agent Status</span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              isPendingApproval
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
-                                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                            }`}
-                          >
-                            {isPendingApproval ? 'Awaiting proposal review' : 'WebMCP-addressable'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Source Dataset</label>
-                        <select
-                          value={activeDatasetId}
-                          onChange={(e) => updateChartDataset(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
-                        >
-                          {(availableDatasets || []).map((dataset) => (
-                            <option key={dataset.id} value={dataset.id}>{dataset.title || dataset.id}</option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-[10px] text-[#71717a]">Choose fields from the active dataset for each channel.</p>
-                      </div>
-
                       <div>
                         <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Chart Title</label>
                         <input
@@ -596,7 +607,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                       <div>
                         <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">X-Axis Variable</label>
                         <select
-                          value={(spec as any).spec?.encoding?.x?.field || 'species'}
+                          value={(spec as any).spec?.encoding?.x?.field || chartFields.find((field) => field.type !== 'quantitative')?.name || ''}
                           onChange={(e) => updateChartEncoding('x', e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
                         >
@@ -607,11 +618,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                       <div>
                         <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Y-Axis Variable</label>
                         <select
-                          value={(spec as any).spec?.encoding?.y?.field || 'body_mass_g'}
+                          value={(spec as any).spec?.encoding?.y?.field || chartFields.find((field) => field.type === 'quantitative')?.name || ''}
                           onChange={(e) => updateChartEncoding('y', e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
                         >
-                          {chartFields.map((field) => <option key={field.name} value={field.name}>{field.name}</option>)}
+                          {chartFields.filter((field) => field.type === 'quantitative').map((field) => <option key={field.name} value={field.name}>{field.name}</option>)}
                         </select>
                       </div>
 
@@ -621,15 +632,43 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1 capitalize">{channel} (optional)</label>
                             <select
                               value={(spec as any).spec?.encoding?.[channel]?.field || ''}
-                              onChange={(e) => e.target.value && updateChartEncoding(channel, e.target.value)}
+                              onChange={(e) => updateChartEncoding(channel, e.target.value)}
                               className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5] outline-none"
                             >
                               <option value="">None</option>
-                              {chartFields.map((field) => <option key={field.name} value={field.name}>{field.name}</option>)}
+                              {chartFields.filter((field) => field.type === 'categorical' || field.type === 'ordinal').map((field) => <option key={field.name} value={field.name}>{field.name}</option>)}
                             </select>
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {(spec.kind === 'volcano-plot' || spec.kind === 'heatmap') && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Chart Title</label>
+                        <input
+                          type="text"
+                          value={spec.title || spec.spec.title || ''}
+                          onChange={(e) => updateScientificChart('title', e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs text-[#0f172a] dark:text-[#f4f4f5] outline-none"
+                        />
+                      </div>
+                      {spec.kind === 'volcano-plot' && (
+                        <div>
+                          <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Significance Threshold</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.001"
+                            value={spec.significanceThreshold ?? 0.05}
+                            onChange={(e) => updateScientificChart('significanceThreshold', Number(e.target.value))}
+                            className="w-28 px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs text-[#0f172a] dark:text-[#f4f4f5] outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -645,7 +684,6 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                         >
                           <option value="IV, Random Effects">IV, Random Effects</option>
                           <option value="IV, Fixed Effect">IV, Fixed Effect</option>
-                          <option value="Mantel-Haenszel">Mantel-Haenszel</option>
                           <option value="DerSimonian-Laird">DerSimonian-Laird</option>
                         </select>
                       </div>
@@ -873,6 +911,18 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                   </div>
 
+                  {spec.kind === 'grouped-bar' && (
+                    <label className="flex items-center gap-2 text-xs font-medium text-[#0f172a] dark:text-[#f4f4f5]">
+                      <input
+                        type="checkbox"
+                        checked={(spec as GroupedBarSpec).yAxis.autoMax !== false}
+                        onChange={(e) => handleNestedChange('yAxis', 'autoMax', e.target.checked)}
+                        className="h-3.5 w-3.5 accent-[#24b47e]"
+                      />
+                      <span>Auto adjust maximum</span>
+                    </label>
+                  )}
+
                   <div>
                     <label className="block text-xs text-[#71717a] dark:text-[#a1a1aa] mb-1">Y-Axis Title</label>
                     <input
@@ -1019,7 +1069,23 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         {/* Tab 2: Interactive Data Grid with Real Meta-Analysis Computation */}
         <TabsContent value="data" className="mt-0 flex-1">
           <div className="p-4 space-y-4">
-            {spec.kind === 'forest-plot' && (
+            {panelUsesDataset && (
+              <div className="rounded-lg border border-dashed border-[#d4d4d8] dark:border-[#3f3f46] p-3 text-xs text-[#71717a]">
+                <label className="block text-xs font-semibold text-[#0f172a] dark:text-[#f4f4f5] mb-1">Panel dataset</label>
+                <select
+                  value={isPanelBoundToDataset ? activeDatasetId : ''}
+                  onChange={(e) => e.target.value && updatePanelDataset(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-white dark:bg-[#121212] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs text-[#0f172a] dark:text-[#f4f4f5] outline-none"
+                >
+                  <option value="" disabled>Select a dataset for this panel</option>
+                  {(availableDatasets || []).map((dataset) => (
+                    <option key={dataset.id} value={dataset.id}>{dataset.title || dataset.name || dataset.id}</option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[10px]">This binding is local to the selected panel. Field mapping is in Design.</p>
+              </div>
+            )}
+            {spec.kind === 'forest-plot' && !isPanelBoundToDataset && (
               <>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -1047,24 +1113,24 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     <div className="grid grid-cols-3 gap-2 pt-1 font-mono text-[10.5px]">
                       <div>
                         <span className="text-[#71717a] block text-[9.5px]">Cochran's Q</span>
-                        <span className="font-bold text-[#0f172a] dark:text-[#f4f4f5]">{currentMetaStats.heterogeneity.qStatistic}</span>
-                        <span className="text-[9px] text-[#71717a] block">(df={currentMetaStats.heterogeneity.df}, p={currentMetaStats.heterogeneity.pValue})</span>
+                        <span className="font-bold text-[#0f172a] dark:text-[#f4f4f5]">{formatNumeric(currentMetaStats.heterogeneity.qStatistic)}</span>
+                        <span className="text-[9px] text-[#71717a] block">(df={currentMetaStats.heterogeneity.df}, p={formatNumeric(currentMetaStats.heterogeneity.pValue, 3)})</span>
                       </div>
                       <div>
                         <span className="text-[#71717a] block text-[9.5px]">Inconsistency I²</span>
-                        <span className="font-bold text-[#24b47e]">{currentMetaStats.heterogeneity.iSquared}%</span>
-                        <span className="text-[9px] text-[#71717a] block">{currentMetaStats.heterogeneity.iSquared > 50 ? 'Substantial' : 'Moderate'}</span>
+                        <span className="font-bold text-[#24b47e]">{formatNumeric(currentMetaStats.heterogeneity.iSquared, 1)}{Number.isFinite(currentMetaStats.heterogeneity.iSquared) ? '%' : ''}</span>
+                        <span className="text-[9px] text-[#71717a] block">{Number.isFinite(currentMetaStats.heterogeneity.iSquared) ? currentMetaStats.heterogeneity.iSquared > 50 ? 'Substantial' : 'Moderate' : 'Not estimable'}</span>
                       </div>
                       <div>
                         <span className="text-[#71717a] block text-[9.5px]">Variance τ²</span>
-                        <span className="font-bold text-[#0f172a] dark:text-[#f4f4f5]">{currentMetaStats.heterogeneity.tauSquared}</span>
-                        <span className="text-[9px] text-[#71717a] block">τ = {currentMetaStats.heterogeneity.tau}</span>
+                        <span className="font-bold text-[#0f172a] dark:text-[#f4f4f5]">{formatNumeric(currentMetaStats.heterogeneity.tauSquared, 3)}</span>
+                        <span className="text-[9px] text-[#71717a] block">τ = {formatNumeric(currentMetaStats.heterogeneity.tau, 3)}</span>
                       </div>
                     </div>
                     <div className="pt-1.5 border-t border-[#e4e4e7] dark:border-[#27272a] flex items-center justify-between">
                       <span className="text-[#71717a]">Pooled Effect:</span>
                       <span className="font-bold font-mono text-[#0f172a] dark:text-[#f4f4f5]">
-                        {currentMetaStats.pooledEstimate.effect} [{currentMetaStats.pooledEstimate.ciLower}, {currentMetaStats.pooledEstimate.ciUpper}] (p={currentMetaStats.pooledEstimate.pValue})
+                        {formatNumeric(currentMetaStats.pooledEstimate.effect)} [{formatNumeric(currentMetaStats.pooledEstimate.ciLower)}, {formatNumeric(currentMetaStats.pooledEstimate.ciUpper)}] (p={formatNumeric(currentMetaStats.pooledEstimate.pValue, 3)})
                       </span>
                     </div>
                   </div>
@@ -1098,8 +1164,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.01"
-                              value={s.effect}
-                              onChange={(e) => handleUpdateStudy(idx, 'effect', parseFloat(e.target.value) || 0.01)}
+                              value={Number.isFinite(s.effect) ? s.effect : ''}
+                              onChange={(e) => handleUpdateStudy(idx, 'effect', parseNumericInput(e.target.value))}
                               className="w-13 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
                           </td>
@@ -1107,8 +1173,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.01"
-                              value={s.ciLower}
-                              onChange={(e) => handleUpdateStudy(idx, 'ciLower', parseFloat(e.target.value) || 0.01)}
+                              value={Number.isFinite(s.ciLower) ? s.ciLower : ''}
+                              onChange={(e) => handleUpdateStudy(idx, 'ciLower', parseNumericInput(e.target.value))}
                               className="w-13 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
                           </td>
@@ -1116,8 +1182,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.01"
-                              value={s.ciUpper}
-                              onChange={(e) => handleUpdateStudy(idx, 'ciUpper', parseFloat(e.target.value) || 0.01)}
+                              value={Number.isFinite(s.ciUpper) ? s.ciUpper : ''}
+                              onChange={(e) => handleUpdateStudy(idx, 'ciUpper', parseNumericInput(e.target.value))}
                               className="w-13 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
                           </td>
@@ -1139,18 +1205,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                   </table>
                 </div>
 
-                {/* Funnel Plot Synchronization Action */}
-                <button
-                  onClick={handleSyncFunnelPlot}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-[#f4f4f5] dark:bg-[#1f1f23] hover:bg-[#e4e4e7] dark:hover:bg-[#27272a] text-xs font-medium rounded-lg transition-colors text-[#0f172a] dark:text-[#f4f4f5] cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-[#24b47e]" />
-                  <span>Sync Data with Funnel Plot (Panel B)</span>
-                </button>
               </>
             )}
 
-            {spec.kind === 'funnel-plot' && (
+            {spec.kind === 'funnel-plot' && !isPanelBoundToDataset && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5]">
@@ -1169,7 +1227,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     <thead className="bg-[#f4f4f5] dark:bg-[#18181b] border-b border-[#e4e4e7] dark:border-[#27272a]">
                       <tr>
                         <th className="p-1.5 font-semibold">Study</th>
-                        <th className="p-1.5 font-semibold w-16">Log OR</th>
+                        <th className="p-1.5 font-semibold w-16">
+                          {spec.xAxis.scale === 'log' ? 'Effect (log)' : 'Effect'}
+                        </th>
                         <th className="p-1.5 font-semibold w-16">SE</th>
                         <th className="p-1.5 w-6"></th>
                       </tr>
@@ -1189,9 +1249,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.05"
-                              value={p.effect}
+                              value={Number.isFinite(p.effect) ? p.effect : ''}
                               onChange={(e) =>
-                                handleUpdateFunnelPoint(idx, 'effect', parseFloat(e.target.value) || 0)
+                                handleUpdateFunnelPoint(idx, 'effect', parseNumericInput(e.target.value))
                               }
                               className="w-14 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
@@ -1200,12 +1260,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.05"
-                              value={p.standardError}
+                              value={Number.isFinite(p.standardError) ? p.standardError : ''}
                               onChange={(e) =>
                                 handleUpdateFunnelPoint(
                                   idx,
                                   'standardError',
-                                  parseFloat(e.target.value) || 0.01
+                                  parseNumericInput(e.target.value)
                                 )
                               }
                               className="w-14 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
@@ -1228,7 +1288,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             )}
 
-            {spec.kind === 'subgroup-analysis' && (
+            {spec.kind === 'subgroup-analysis' && !isPanelBoundToDataset && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5]">
@@ -1269,9 +1329,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.05"
-                              value={sg.effect}
+                              value={Number.isFinite(sg.effect) ? sg.effect : ''}
                               onChange={(e) =>
-                                handleUpdateSubgroup(idx, 'effect', parseFloat(e.target.value) || 0.01)
+                                handleUpdateSubgroup(idx, 'effect', parseNumericInput(e.target.value))
                               }
                               className="w-13 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
@@ -1280,9 +1340,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.05"
-                              value={sg.ciLower}
+                              value={Number.isFinite(sg.ciLower) ? sg.ciLower : ''}
                               onChange={(e) =>
-                                handleUpdateSubgroup(idx, 'ciLower', parseFloat(e.target.value) || 0.01)
+                                handleUpdateSubgroup(idx, 'ciLower', parseNumericInput(e.target.value))
                               }
                               className="w-13 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
@@ -1291,9 +1351,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="0.05"
-                              value={sg.ciUpper}
+                              value={Number.isFinite(sg.ciUpper) ? sg.ciUpper : ''}
                               onChange={(e) =>
-                                handleUpdateSubgroup(idx, 'ciUpper', parseFloat(e.target.value) || 0.01)
+                                handleUpdateSubgroup(idx, 'ciUpper', parseNumericInput(e.target.value))
                               }
                               className="w-13 px-1 py-0.5 font-mono bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
@@ -1301,9 +1361,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                           <td className="p-1">
                             <input
                               type="number"
-                              value={sg.iSquared}
+                              value={Number.isFinite(sg.iSquared) ? sg.iSquared : ''}
                               onChange={(e) =>
-                                handleUpdateSubgroup(idx, 'iSquared', parseInt(e.target.value, 10) || 0)
+                                handleUpdateSubgroup(idx, 'iSquared', parseNumericInput(e.target.value))
                               }
                               className="w-11 px-1 py-0.5 font-mono text-[#24b47e] font-semibold bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
                             />
@@ -1325,7 +1385,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             )}
 
-            {spec.kind === 'grouped-bar' && (
+            {spec.kind === 'grouped-bar' && !isPanelBoundToDataset && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5]">
@@ -1364,12 +1424,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="1"
-                              value={g.treatmentVal}
+                              value={Number.isFinite(g.treatmentVal) ? g.treatmentVal : ''}
                               onChange={(e) =>
                                 handleUpdateGroupedBar(
                                   idx,
                                   'treatmentVal',
-                                  parseFloat(e.target.value) || 0
+                                  parseNumericInput(e.target.value)
                                 )
                               }
                               className="w-18 px-1 py-0.5 font-mono text-emerald-600 font-semibold bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
@@ -1379,12 +1439,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                             <input
                               type="number"
                               step="1"
-                              value={g.controlVal}
+                              value={Number.isFinite(g.controlVal) ? g.controlVal : ''}
                               onChange={(e) =>
                                 handleUpdateGroupedBar(
                                   idx,
                                   'controlVal',
-                                  parseFloat(e.target.value) || 0
+                                  parseNumericInput(e.target.value)
                                 )
                               }
                               className="w-18 px-1 py-0.5 font-mono text-[#71717a] bg-transparent rounded border border-transparent hover:border-[#e4e4e7] focus:border-[#24b47e] outline-none"
@@ -1407,24 +1467,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             )}
 
-            {spec.kind === 'single-chart' && currentDatasetProfile && (
+            {isPanelBoundToDataset && currentDatasetProfile && (
   <div className="space-y-3">
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
-        {onSelectDataset && availableDatasets && availableDatasets.length > 0 && (
-          <select
-            value={activeDatasetId}
-            onChange={(e) => updateChartDataset(e.target.value)}
-            className="text-[11px] font-semibold px-2 py-1 rounded-md border border-[#e4e4e7] dark:border-[#27272a] bg-[#f4f4f5] dark:bg-[#18181b] text-[#0f172a] dark:text-[#f4f4f5]"
-          >
-            {availableDatasets.map((ds) => (
-              <option key={ds.id} value={ds.id}>
-                {ds.title || ds.name || ds.id}
-              </option>
-            ))}
-            <option value="palmer-penguins">Palmer Penguins (demo)</option>
-          </select>
-        )}
         <div>
           <span className="text-xs font-bold text-[#0f172a] dark:text-[#f4f4f5] block">
             Dataset Records ({currentDatasetProfile.title})
@@ -1526,7 +1572,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                       min={8}
                       max={24}
                       value={spec.fontSize || 12}
-                      onChange={(e) => handleSpecChange('fontSize', parseInt(e.target.value, 10) || 12)}
+                      onChange={(e) => handleSpecChange('fontSize', parseNumericInput(e.target.value))}
                       className="w-24 px-2.5 py-1.5 bg-white dark:bg-[#18181b] border border-[#e4e4e7] dark:border-[#27272a] rounded-lg text-xs outline-none focus:border-[#24b47e]"
                     />
                   </div>

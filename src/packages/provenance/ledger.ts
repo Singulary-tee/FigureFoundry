@@ -1,4 +1,5 @@
 import { FigureSpec, ProvenanceEvent, ValidationReport } from '../../types';
+import { DatasetRecord } from '../data-model/datasets';
 
 export function generateEventId(): string {
   return 'evt_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36);
@@ -7,9 +8,10 @@ export function generateEventId(): string {
 export function createProvenanceEvent(params: {
   revision: number;
   actor: 'agent' | 'human';
-  actionType: 'PROPOSE_AND_APPLY' | 'DIRECT_HUMAN_EDIT' | 'LOAD_DATASET' | 'IMPORT_DATASET' | 'CLEAR_DATASET' | 'TIME_TRAVEL_RESTORE';
+  actionType: 'PROPOSE_AND_APPLY' | 'DIRECT_HUMAN_EDIT' | 'LOAD_DATASET' | 'IMPORT_DATASET' | 'UPDATE_DATASET' | 'CLEAR_DATASET' | 'TIME_TRAVEL_RESTORE';
   summary: string;
   previewId?: string;
+  approval?: ProvenanceEvent['approval'];
   basedOnRevision: number;
   specSnapshot: FigureSpec;
   validationReport: ValidationReport;
@@ -18,6 +20,9 @@ export function createProvenanceEvent(params: {
   targetPanelKind?: string;
   workspaceSnapshot?: ProvenanceEvent['workspaceSnapshot'];
   workspaceLayerOrder?: string[];
+  figureSnapshot?: ProvenanceEvent['figureSnapshot'];
+  datasetSnapshots?: DatasetRecord[];
+  scopeSnapshot?: ProvenanceEvent['scopeSnapshot'];
 }): ProvenanceEvent {
   return {
     eventId: generateEventId(),
@@ -27,6 +32,7 @@ export function createProvenanceEvent(params: {
     actionType: params.actionType,
     summary: params.summary,
     previewId: params.previewId,
+    approval: params.approval ? { ...params.approval } : undefined,
     basedOnRevision: params.basedOnRevision,
     specSnapshot: JSON.parse(JSON.stringify(params.specSnapshot)),
     validationReport: JSON.parse(JSON.stringify(params.validationReport)),
@@ -36,6 +42,9 @@ export function createProvenanceEvent(params: {
     targetPanelKind: params.targetPanelKind,
     workspaceSnapshot: params.workspaceSnapshot ? JSON.parse(JSON.stringify(params.workspaceSnapshot)) : undefined,
     workspaceLayerOrder: params.workspaceLayerOrder ? [...params.workspaceLayerOrder] : undefined,
+    figureSnapshot: params.figureSnapshot ? JSON.parse(JSON.stringify(params.figureSnapshot)) : undefined,
+    datasetSnapshots: params.datasetSnapshots ? JSON.parse(JSON.stringify(params.datasetSnapshots)) : undefined,
+    scopeSnapshot: params.scopeSnapshot ? JSON.parse(JSON.stringify(params.scopeSnapshot)) : undefined,
   };
 }
 
@@ -51,6 +60,7 @@ export function recordRevision(
   options: {
     panelId?: string;
     previewId?: string;
+    approval?: ProvenanceEvent['approval'];
     basedOnRevision?: number;
     validationReport?: ValidationReport;
     commandPayload?: Record<string, any>;
@@ -58,6 +68,9 @@ export function recordRevision(
     diffDescription?: string[];
     workspaceSnapshot?: ProvenanceEvent['workspaceSnapshot'];
     workspaceLayerOrder?: string[];
+    figureSnapshot?: ProvenanceEvent['figureSnapshot'];
+    datasetSnapshots?: DatasetRecord[];
+    scopeSnapshot?: ProvenanceEvent['scopeSnapshot'];
   } = {}
 ): ProvenanceLedger {
   const currentEvents = ledger?.events || [];
@@ -71,6 +84,7 @@ export function recordRevision(
     actionType: options.actionType || (actor === 'agent' ? 'PROPOSE_AND_APPLY' : 'DIRECT_HUMAN_EDIT'),
     summary,
     previewId: options.previewId,
+    approval: options.approval,
     basedOnRevision: options.basedOnRevision ?? Math.max(0, nextRev - 1),
     specSnapshot: targetPanel?.spec || { title: 'Revision Snapshot' },
     validationReport: options.validationReport || { valid: true, issues: [] },
@@ -85,6 +99,9 @@ export function recordRevision(
     workspaceLayerOrder: options.workspaceLayerOrder || (figure?.layers
       ? [...figure.layers].sort((a: any, b: any) => a.order - b.order).map((layer: any) => layer.panelId)
       : undefined),
+    figureSnapshot: options.figureSnapshot || (figure?.panels ? figure : undefined),
+    datasetSnapshots: options.datasetSnapshots,
+    scopeSnapshot: options.scopeSnapshot,
   });
   return {
     events: [evt, ...currentEvents],
